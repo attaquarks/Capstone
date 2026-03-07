@@ -1,0 +1,16 @@
+order_id,product_id,supplier_id,order_date,quantity,unit_price,total_value,delivery_status,quality_rating,notes
+PO-2025-001,PRD-001,SUP-101,2025-01-15,500,12.50,6250.00,Completed,5,On time delivery; perfect quality
+PO-2025-002,PRD-002,SUP-102,2025-01-20,20,445.00,8900.00,Completed,4,2 days late; good quality
+PO-2025-003,PRD-003,SUP-103,2025-02-01,3000,82.00,246000.00,Completed,4,Minor surface defects on 2%
+PO-2025-004,PRD-004,SUP-104,2025-02-10,15,880.00,13200.00,Completed,5,Excellent quality and packaging
+PO-2025-005,PRD-005,SUP-105,2025-03-01,20,315.00,6300.00,Completed,3,5 days late; belt tension inconsistent
+PO-2025-006,PRD-006,SUP-106,2025-03-15,10,1180.00,11800.00,Completed,5,Perfect; firmware pre-loaded
+PO-2025-007,PRD-007,SUP-107,2025-04-01,1000,24.50,24500.00,Completed,5,Bulk discount applied
+PO-2025-008,PRD-008,SUP-108,2025-04-20,50,175.00,8750.00,Completed,4,Good quality; minor packaging damage
+PO-2025-009,PRD-009,SUP-109,2025-05-01,30,540.00,16200.00,Completed,5,Certified pressure test included
+PO-2025-010,PRD-010,SUP-110,2025-05-15,25,710.00,17750.00,Completed,4,1 day late; quality acceptable
+PO-2025-011,PRD-001,SUP-101,2025-06-01,500,12.50,6250.00,Completed,5,Repeat order; same excellent quality
+PO-2025-012,PRD-003,SUP-103,2025-06-15,2000,83.00,166000.00,Completed,4,Price increase of 1.2%
+PO-2025-013,PRD-011,SUP-111,2025-07-01,100,44.00,4400.00,Completed,5,Fast delivery; calibration included
+PO-2025-014,PRD-002,SUP-102,2025-07-20,25,450.00,11250.00,Completed,4,Standard delivery
+PO-2025-015,PRD-012,SUP-103,2025-08-01,50,205.00,10250.00,Completed,3,2 pipes with minor dents

@@ -1,0 +1,36 @@
+Grounding Justification: Why Our Agent Needs Domain-Specific Data
+====================================================================
+
+The Supply Chain Intelligence Agent cannot rely solely on the LLM's pre-trained
+knowledge for the following critical reasons:
+
+1. PRIVATE & PROPRIETARY DATA: Our inventory levels, supplier contracts, pricing
+   tiers, and procurement history are internal company data that no public LLM has
+   ever seen. The LLM cannot know that "PRD-001 has 150 units in stock" without
+   access to our live inventory report. Without grounding, the agent would either
+   hallucinate stock levels or refuse to answer.
+
+2. REAL-TIME ACCURACY: Supply chain data changes daily. Lead times shift, stock
+   depletes, new shipments arrive. The LLM's training data is static and months
+   old. By grounding the agent in our vector database (updated via ingest_data.py),
+   we ensure every response reflects the current state of operations.
+
+3. DOMAIN-SPECIFIC CALCULATIONS: Reorder risk scores depend on the specific
+   relationship between current_stock, reorder_point, lead_time_days, and
+   supplier_reliability_score. These formulas are proprietary to our operations
+   and cannot be inferred by a general-purpose LLM.
+
+4. SUPPLIER RELATIONSHIPS: Each supplier has unique payment terms, minimum order
+   values, certifications, and reliability scores that directly impact procurement
+   decisions. The LLM has no knowledge of "SUP-101 BearingTech Industries" or
+   their Net 30 payment terms.
+
+5. COMPLIANCE & TRACEABILITY: In supply chain management, every recommendation
+   must be traceable to source data. RAG provides this traceability through
+   metadata (source_file, doc_type, last_updated), enabling auditors to verify
+   that the agent's suggestions are grounded in actual company records rather
+   than LLM speculation.
+
+In summary, the RAG pipeline transforms our agent from a generic chatbot into a
+domain-specific decision support system that supply chain managers can trust for
+operational decisions involving real money and real inventory.

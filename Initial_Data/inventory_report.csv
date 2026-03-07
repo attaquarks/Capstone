@@ -1,0 +1,16 @@
+product_id,product_name,category,current_stock,reorder_point,max_stock,unit_cost,lead_time_days,supplier_id,last_updated
+PRD-001,Industrial Bearing 6205,Bearings,150,200,1000,12.50,14,SUP-101,2025-12-01
+PRD-002,Hydraulic Pump HP-300,Pumps,45,50,200,450.00,21,SUP-102,2025-12-01
+PRD-003,Steel Plate 10mm,Raw Materials,2000,1500,5000,85.00,7,SUP-103,2025-12-01
+PRD-004,Electric Motor 5HP,Motors,30,25,100,890.00,28,SUP-104,2025-12-01
+PRD-005,Conveyor Belt 500mm,Belts,12,20,80,320.00,35,SUP-105,2025-12-01
+PRD-006,PLC Controller S7-1200,Electronics,8,10,50,1200.00,42,SUP-106,2025-12-01
+PRD-007,Welding Wire 1.2mm,Consumables,500,300,2000,25.00,5,SUP-107,2025-12-01
+PRD-008,Pneumatic Cylinder 50mm,Pneumatics,65,40,200,180.00,18,SUP-108,2025-12-01
+PRD-009,Safety Valve DN50,Valves,20,15,60,550.00,25,SUP-109,2025-12-01
+PRD-010,Gear Reducer 10:1,Gearboxes,18,20,75,720.00,30,SUP-110,2025-12-01
+PRD-011,Thermal Sensor PT100,Sensors,90,50,300,45.00,10,SUP-111,2025-12-01
+PRD-012,Stainless Pipe DN100,Piping,35,30,150,210.00,14,SUP-103,2025-12-01
+PRD-013,Rubber Gasket Set,Seals,200,100,500,15.00,7,SUP-112,2025-12-01
+PRD-014,Industrial Filter F-200,Filters,25,20,100,95.00,12,SUP-113,2025-12-01
+PRD-015,Chain Drive 08B,Drives,40,35,120,65.00,16,SUP-114,2025-12-01

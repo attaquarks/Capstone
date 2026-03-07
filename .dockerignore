@@ -1,0 +1,59 @@
+# Lab 9: Environment Security - .dockerignore
+# Prevents sensitive or unnecessary files from being baked into the Docker image
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment files (contain API keys)
+.env
+.env.local
+.env.production
+
+# Git files
+.git
+.gitignore
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Database files (local development only)
+*.db
+*.sqlite
+checkpoint_db.sqlite
+feedback_log.db
+chroma_db/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation (not needed in container)
+*.md
+*.txt
+!requirements.txt
+
+# Test and evaluation files
+test_dataset.json
+evaluation_report.md
+
+# Docker files
+Dockerfile
+docker-compose.yaml
+.dockerignore
+
+# Build logs
+docker_build.log
+
+# GitHub Actions
+.github/

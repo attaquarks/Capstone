@@ -1,0 +1,58 @@
+========================================
+PRODUCT SPECIFICATIONS CATALOG
+Supply Chain Division - Q4 2025
+========================================
+
+PRODUCT: Industrial Bearing 6205 (PRD-001)
+Category: Bearings
+Dimensions: 25mm x 52mm x 15mm (Inner Dia x Outer Dia x Width)
+Material: Chrome Steel (GCr15)
+Load Rating: Dynamic 14.8 kN, Static 7.8 kN
+Speed Limit: 13,000 RPM
+Operating Temperature: -30C to +120C
+Applications: Electric motors, pumps, conveyors, general machinery
+Shelf Life: 5 years in sealed packaging
+
+PRODUCT: Hydraulic Pump HP-300 (PRD-002)
+Category: Pumps
+Type: Gear pump, fixed displacement
+Flow Rate: 30 L/min at 1500 RPM
+Max Pressure: 250 bar
+Displacement: 20 cc/rev
+Weight: 8.5 kg
+Port Size: G3/4
+Fluid: Mineral oil ISO VG 32-68
+Applications: CNC machines, hydraulic presses, injection molding
+
+PRODUCT: Steel Plate 10mm (PRD-003)
+Category: Raw Materials
+Grade: S355JR (EN 10025)
+Thickness: 10mm (+/- 0.5mm)
+Standard Dimensions: 2000mm x 1000mm
+Weight per Sheet: 157 kg
+Surface: Hot rolled, mill finish
+Yield Strength: 355 MPa minimum
+Applications: Structural fabrication, machine bases, heavy equipment
+
+PRODUCT: Electric Motor 5HP (PRD-004)
+Category: Motors
+Type: Three-phase induction motor
+Power: 5 HP (3.7 kW)
+Voltage: 380-415V, 50Hz
+Speed: 1450 RPM (4-pole)
+Frame: 112M
+Efficiency: IE3 (Premium)
+Protection: IP55
+Mounting: B3 (foot mount) or B5 (flange mount)
+Applications: Pumps, fans, compressors, conveyors
+
+PRODUCT: PLC Controller S7-1200 (PRD-006)
+Category: Electronics
+Model: CPU 1214C DC/DC/DC
+Digital I/O: 14 DI / 10 DO
+Analog I/O: 2 AI (0-10V)
+Memory: 100 KB work memory
+Communication: PROFINET (2 ports)
+Programming: TIA Portal (LAD, FBD, SCL)
+Power Supply: 24V DC
+Applications: Process automation, packaging lines, material handling

@@ -1,0 +1,71 @@
+# Lab 9: Container Orchestration - Docker Compose
+# Manages the Agent API service and ChromaDB vector database service
+
+version: "3.8"
+
+services:
+  # Service 1: Supply Chain Intelligence Agent (FastAPI)
+  agent-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: supply-chain-agent
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8001
+      - PYTHONPATH=/app
+    env_file:
+      - .env
+    volumes:
+      - agent-data:/app/data
+      - checkpoint-data:/app/checkpoints
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Service 2: ChromaDB Vector Database
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: supply-chain-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+# Persistent volumes ensure data survives container restarts/deletions
+volumes:
+  agent-data:
+    driver: local
+  checkpoint-data:
+    driver: local
+  chroma-data:
+    driver: local
+
+# Shared network for inter-service communication
+networks:
+  agent-network:
+    driver: bridge

@@ -1,0 +1,134 @@
+[
+  {
+    "query": "What is the current stock level of Industrial Bearing 6205?",
+    "expected_answer": "The current stock of Industrial Bearing 6205 (PRD-001) is 150 units, which is below the reorder point of 200 units.",
+    "requires_tool": "query_inventory",
+    "category": "inventory"
+  },
+  {
+    "query": "How many Hydraulic Pumps HP-300 do we have in stock?",
+    "expected_answer": "There are 45 units of Hydraulic Pump HP-300 (PRD-002) in stock, below the reorder point of 50.",
+    "requires_tool": "query_inventory",
+    "category": "inventory"
+  },
+  {
+    "query": "What is the reorder risk for PRD-005 Conveyor Belt?",
+    "expected_answer": "PRD-005 Conveyor Belt 500mm has a CRITICAL risk score. Current stock is 12 units against a reorder point of 20, with a 35-day lead time from ConveyAll Solutions (reliability: 79%).",
+    "requires_tool": "calculate_risk_score",
+    "category": "risk"
+  },
+  {
+    "query": "Calculate the risk score for PLC Controller PRD-006.",
+    "expected_answer": "PRD-006 PLC Controller S7-1200 has a HIGH risk score. Current stock is 8 units, reorder point is 10, lead time is 42 days from AutomaTech GmbH (reliability: 92%).",
+    "requires_tool": "calculate_risk_score",
+    "category": "risk"
+  },
+  {
+    "query": "Which suppliers provide bearings?",
+    "expected_answer": "BearingTech Industries (SUP-101) from Germany specializes in Bearings and Bushings, with a reliability score of 0.95 and ISO 9001/ISO 14001 certifications.",
+    "requires_tool": "search_suppliers",
+    "category": "supplier"
+  },
+  {
+    "query": "Find me reliable suppliers from Germany.",
+    "expected_answer": "German suppliers include BearingTech Industries (reliability 0.95), AutomaTech GmbH (reliability 0.92), and GearWorks Precision (reliability 0.91).",
+    "requires_tool": "search_suppliers",
+    "category": "supplier"
+  },
+  {
+    "query": "What are the specifications for the Electric Motor 5HP?",
+    "expected_answer": "Electric Motor 5HP (PRD-004): Three-phase induction motor, 5 HP (3.7 kW), 380-415V 50Hz, 1450 RPM, Frame 112M, IE3 efficiency, IP55 protection.",
+    "requires_tool": "get_product_specs",
+    "category": "specs"
+  },
+  {
+    "query": "Draft a procurement email to BearingTech for 500 bearings.",
+    "expected_answer": "A professional RFQ email addressed to BearingTech Industries requesting a quotation for 500 units of Industrial Bearing 6205 with standard processing.",
+    "requires_tool": "generate_procurement_email",
+    "category": "email"
+  },
+  {
+    "query": "What products are below their reorder point?",
+    "expected_answer": "Products below reorder point: PRD-001 (150 vs 200), PRD-002 (45 vs 50), PRD-005 (12 vs 20), PRD-006 (8 vs 10), PRD-010 (18 vs 20).",
+    "requires_tool": "query_inventory",
+    "category": "inventory"
+  },
+  {
+    "query": "What is the lead time for Hydraulic Pump from HydraForce?",
+    "expected_answer": "The lead time for Hydraulic Pump HP-300 from HydraForce Systems (SUP-102) is 21 days.",
+    "requires_tool": "query_inventory",
+    "category": "inventory"
+  },
+  {
+    "query": "Calculate risk for PRD-001 Industrial Bearing.",
+    "expected_answer": "PRD-001 has a HIGH risk score due to current stock (150) being below the reorder point (200), despite a short 14-day lead time and excellent supplier reliability (0.95).",
+    "requires_tool": "calculate_risk_score",
+    "category": "risk"
+  },
+  {
+    "query": "Who supplies PLC controllers and what are their terms?",
+    "expected_answer": "AutomaTech GmbH (SUP-106) from Germany supplies PLC and Automation equipment. Payment terms: Net 45, minimum order value: $3000, reliability: 0.92.",
+    "requires_tool": "search_suppliers",
+    "category": "supplier"
+  },
+  {
+    "query": "Generate an urgent email to ConveyAll for 50 conveyor belts.",
+    "expected_answer": "A professional procurement email to ConveyAll Solutions requesting 50 units of Conveyor Belt 500mm with high urgency due to critical stock levels.",
+    "requires_tool": "generate_procurement_email",
+    "category": "email"
+  },
+  {
+    "query": "What is the unit cost of Steel Plate 10mm?",
+    "expected_answer": "The unit cost of Steel Plate 10mm (PRD-003) is $85.00, supplied by SteelMax Corp (SUP-103) with a 7-day lead time.",
+    "requires_tool": "query_inventory",
+    "category": "inventory"
+  },
+  {
+    "query": "What is the risk level for Gear Reducer PRD-010?",
+    "expected_answer": "PRD-010 Gear Reducer 10:1 has a HIGH risk score. Stock is 18 vs reorder point of 20, with 30-day lead time from GearWorks Precision (reliability: 0.91).",
+    "requires_tool": "calculate_risk_score",
+    "category": "risk"
+  },
+  {
+    "query": "List all suppliers with reliability above 0.90.",
+    "expected_answer": "Suppliers with reliability above 0.90: BearingTech (0.95), PowerDrive (0.96), AutomaTech (0.92), WeldPro (0.90), ValveTech (0.93), GearWorks (0.91), SensorDynamics (0.94).",
+    "requires_tool": "search_suppliers",
+    "category": "supplier"
+  },
+  {
+    "query": "What are the specs for the Hydraulic Pump HP-300?",
+    "expected_answer": "Hydraulic Pump HP-300 (PRD-002): Gear pump, fixed displacement, 30 L/min at 1500 RPM, max pressure 250 bar, displacement 20 cc/rev, weight 8.5 kg.",
+    "requires_tool": "get_product_specs",
+    "category": "specs"
+  },
+  {
+    "query": "How many Thermal Sensors are in stock and who supplies them?",
+    "expected_answer": "There are 90 units of Thermal Sensor PT100 (PRD-011) in stock (above reorder point of 50). Supplied by SensorDynamics (SUP-111).",
+    "requires_tool": "query_inventory",
+    "category": "inventory"
+  },
+  {
+    "query": "Draft an email to SteelMax Corp for 1000 steel plates with critical urgency.",
+    "expected_answer": "A professional procurement email to SteelMax Corp requesting 1000 Steel Plate 10mm units with critical urgency and expedited processing.",
+    "requires_tool": "generate_procurement_email",
+    "category": "email"
+  },
+  {
+    "query": "What is the maximum stock capacity for Safety Valve DN50?",
+    "expected_answer": "Safety Valve DN50 (PRD-009) has a maximum stock capacity of 60 units. Current stock is 20, with a reorder point of 15.",
+    "requires_tool": "query_inventory",
+    "category": "inventory"
+  },
+  {
+    "query": "Calculate risk for Welding Wire PRD-007.",
+    "expected_answer": "PRD-007 Welding Wire 1.2mm has a LOW risk score. Current stock is 500 units, well above reorder point of 300, with only 5-day lead time from WeldPro (reliability: 0.90).",
+    "requires_tool": "calculate_risk_score",
+    "category": "risk"
+  },
+  {
+    "query": "What payment terms does ValveTech International offer?",
+    "expected_answer": "ValveTech International (SUP-109) offers Net 45 payment terms, minimum order value of $1200, specializing in Industrial Valves with ISO 9001 and PED certifications.",
+    "requires_tool": "search_suppliers",
+    "category": "supplier"
+  }
+]

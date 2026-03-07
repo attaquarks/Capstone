@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ChromaDB local data
+chroma_db/
+
+# Checkpoint database (generated at runtime)
+checkpoint_db.sqlite
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

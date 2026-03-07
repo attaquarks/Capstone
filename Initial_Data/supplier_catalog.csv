@@ -1,0 +1,15 @@
+supplier_id,supplier_name,contact_email,country,reliability_score,min_order_value,payment_terms,specialization,lead_time_avg_days,certifications
+SUP-101,BearingTech Industries,sales@bearingtech.com,Germany,0.95,500,Net 30,Bearings and Bushings,14,ISO 9001; ISO 14001
+SUP-102,HydraForce Systems,orders@hydraforce.com,USA,0.88,2000,Net 45,Hydraulic Equipment,21,ISO 9001
+SUP-103,SteelMax Corp,procurement@steelmax.com,China,0.82,5000,Net 60,Raw Steel and Piping,7,ISO 9001; GB/T 19001
+SUP-104,PowerDrive Motors,info@powerdrive.com,Japan,0.96,1000,Net 30,Electric Motors and Drives,28,ISO 9001; JIS
+SUP-105,ConveyAll Solutions,sales@conveyall.com,USA,0.79,1500,Net 30,Conveyor Systems,35,ISO 9001
+SUP-106,AutomaTech GmbH,orders@automatech.de,Germany,0.92,3000,Net 45,PLC and Automation,42,ISO 9001; IEC 61131
+SUP-107,WeldPro Supplies,bulk@weldpro.com,South Korea,0.90,200,Net 15,Welding Consumables,5,ISO 9001; AWS
+SUP-108,PneuMax Ltd,sales@pneumax.co.uk,UK,0.87,800,Net 30,Pneumatic Components,18,ISO 9001
+SUP-109,ValveTech International,rfq@valvetech.com,Italy,0.93,1200,Net 45,Industrial Valves,25,ISO 9001; PED
+SUP-110,GearWorks Precision,orders@gearworks.com,Germany,0.91,2000,Net 30,Gearboxes and Reducers,30,ISO 9001; DIN
+SUP-111,SensorDynamics,info@sensordyn.com,USA,0.94,300,Net 30,Industrial Sensors,10,ISO 9001; ATEX
+SUP-112,SealMaster Inc,sales@sealmaster.com,Taiwan,0.85,150,Net 15,Gaskets and Seals,7,ISO 9001
+SUP-113,FilterPure Systems,orders@filterpure.com,Netherlands,0.89,500,Net 30,Industrial Filtration,12,ISO 9001; ISO 14001
+SUP-114,ChainLink Drives,procurement@chainlink.com,India,0.80,400,Net 30,Chain and Belt Drives,16,ISO 9001

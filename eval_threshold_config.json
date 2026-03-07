@@ -1,0 +1,5 @@
+{
+  "min_faithfulness": 0.7,
+  "min_relevancy": 0.75,
+  "min_tool_accuracy": 0.8
+}
