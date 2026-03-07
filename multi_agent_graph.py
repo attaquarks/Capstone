@@ -75,6 +75,7 @@ def researcher_node(state: MultiAgentState) -> dict:
     return {
         "messages": [response],
         "current_agent": "researcher",
+        "handover_count": state.get("handover_count", 0),
     }
 
 
@@ -90,6 +91,7 @@ def analyst_node(state: MultiAgentState) -> dict:
     return {
         "messages": [response],
         "current_agent": "analyst",
+        "handover_count": state.get("handover_count", 0) + 1,
     }
 
 
@@ -103,11 +105,7 @@ def researcher_router(state: MultiAgentState) -> str:
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "researcher_tools"
 
-    # If research is complete (signaled by content), hand over to analyst
-    content = last_message.content if hasattr(last_message, "content") else ""
-    if "RESEARCH COMPLETE" in content.upper() or state.get("handover_count", 0) == 0:
-        return "analyst"
-
+    # Research is complete, hand over to analyst
     return "analyst"
 
 

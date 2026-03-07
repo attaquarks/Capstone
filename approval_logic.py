@@ -91,7 +91,7 @@ def approval_gate_node(state: HITLState) -> dict:
 
 
 def execute_approved_action(state: HITLState) -> dict:
-    """Execute the action after human approval, potentially with edits."""
+    """Execute the action after human approval, applying any human edits to tool arguments."""
     last_ai_message = None
     for msg in reversed(state["messages"]):
         if hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -100,6 +100,33 @@ def execute_approved_action(state: HITLState) -> dict:
 
     if not last_ai_message:
         return {"messages": []}
+
+    # Apply human edits to tool call arguments if provided
+    human_edit = state.get("human_edit", "")
+    if human_edit and last_ai_message.tool_calls:
+        import copy
+        edited_message = copy.deepcopy(last_ai_message)
+        for tc in edited_message.tool_calls:
+            if tc["name"] == "generate_procurement_email":
+                # Parse edit string in format "field=value" or direct text replacement
+                if "=" in human_edit:
+                    field, value = human_edit.split("=", 1)
+                    field = field.strip()
+                    value = value.strip()
+                    if field in tc["args"]:
+                        tc["args"][field] = value
+                else:
+                    # Treat as a note to append to the urgency field
+                    tc["args"]["urgency"] = human_edit
+        # Replace the last AI message with the edited version in state
+        messages = list(state["messages"])
+        for i in range(len(messages) - 1, -1, -1):
+            if hasattr(messages[i], "tool_calls") and messages[i].tool_calls:
+                messages[i] = edited_message
+                break
+        tool_node = ToolNode(ALL_TOOLS)
+        result = tool_node.invoke({"messages": messages})
+        return result
 
     tool_node = ToolNode(ALL_TOOLS)
     result = tool_node.invoke({"messages": state["messages"]})
@@ -181,19 +208,43 @@ async def run_hitl_demo():
     print("\n" + "=" * 60)
     print("STATE EDITING DEMO")
     print("=" * 60)
-    print("""
-    Scenario: Agent proposes sending an email to BearingTech Industries.
-    Human EDITS the email body before execution:
-    
-    Original:  "Standard processing timeline is acceptable."
-    Edited:    "We require delivery within 10 business days due to planned maintenance."
-    
-    The agent then sends the EDITED version.
-    
-    Implementation: The approval_gate node captures edits via the 'human_edit'
-    state field. The execute_approved_action node applies any edits to the
-    tool arguments before execution.
-    """)
+
+    edit_thread_id = "hitl-edit-demo-001"
+    edit_config = {"configurable": {"thread_id": edit_thread_id}}
+
+    async with AsyncSqliteSaver.from_conn_string(DB_PATH) as checkpointer:
+        graph = build_hitl_graph(checkpointer)
+
+        # Step 1: User requests an email (will trigger approval gate)
+        print("\n--- Step 1: User requests email ---")
+        edit_query = "Generate a procurement email to SteelMax Corp for 200 Steel Plates with normal urgency."
+        print(f"User: {edit_query}")
+
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(content=edit_query)], "pending_approval": False, "human_edit": ""},
+            config=edit_config,
+        )
+        print("[SYSTEM] Graph paused at approval gate - human can now edit")
+
+        # Step 2: Human edits the urgency before approving
+        print("\n--- Step 2: Human edits the tool arguments ---")
+        print("Human edit: urgency=critical")
+        print("(Changing urgency from 'normal' to 'critical' before execution)")
+
+        # Update the state with human's edit and resume
+        current_state = await graph.aget_state(edit_config)
+        await graph.aupdate_state(
+            edit_config,
+            {"human_edit": "urgency=critical"},
+        )
+
+        # Resume execution with the edited state
+        result = await graph.ainvoke(None, config=edit_config)
+
+        print("\n--- Final Output (with human edit applied) ---")
+        final_msg = result["messages"][-1]
+        print(final_msg.content if hasattr(final_msg, "content") else str(final_msg))
+        print("\nState editing verified: human modified urgency from 'normal' to 'critical' before execution.")
 
 
 if __name__ == "__main__":

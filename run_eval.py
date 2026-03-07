@@ -139,9 +139,9 @@ def run_evaluation():
         from graph import build_graph
         graph = build_graph()
     except Exception as e:
-        print(f"[ERROR] Failed to build agent graph: {e}")
-        print("Running evaluation with mock responses...")
-        graph = None
+        print(f"[FATAL] Failed to build agent graph: {e}")
+        print("Cannot run evaluation without a functional agent. Exiting with failure.")
+        sys.exit(1)
 
     results = []
     for i, test_case in enumerate(dataset):
@@ -153,14 +153,11 @@ def run_evaluation():
         print(f"\n[{i+1}/{len(dataset)}] Testing: {query[:60]}...")
 
         # Get agent response
-        if graph:
-            try:
-                result = graph.invoke({"messages": [HumanMessage(content=query)]})
-                actual = result["messages"][-1].content
-            except Exception as e:
-                actual = f"Agent error: {str(e)}"
-        else:
-            actual = expected  # Mock: use expected as actual for dry run
+        try:
+            result = graph.invoke({"messages": [HumanMessage(content=query)]})
+            actual = result["messages"][-1].content
+        except Exception as e:
+            actual = f"Agent error: {str(e)}"
 
         # Score with LLM judges
         time.sleep(1)  # Rate limiting for free tier
