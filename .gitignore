@@ -23,9 +23,6 @@ Thumbs.db
 # ChromaDB local data
 chroma_db/
 
-# Checkpoint database (generated at runtime)
-checkpoint_db.sqlite
-
 # Build artifacts
 dist/
 build/
