@@ -113,8 +113,7 @@ def execute_approved_action(state: HITLState) -> dict:
                     field, value = human_edit.split("=", 1)
                     field = field.strip()
                     value = value.strip()
-                    if field in tc["args"]:
-                        tc["args"][field] = value
+                    tc["args"][field] = value
                 else:
                     # Treat as a note to append to the urgency field
                     tc["args"]["urgency"] = human_edit
