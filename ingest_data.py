@@ -12,16 +12,17 @@ import csv
 import re
 import uuid
 from datetime import datetime
+from typing import Any
 
 import chromadb
 from chromadb.config import Settings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 
 load_dotenv()
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "Initial_Data")
 CHROMA_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
 COLLECTION_NAME = "supply_chain_knowledge"
@@ -38,7 +39,7 @@ def clean_text(text: str) -> str:
     return text
 
 
-def parse_csv_to_documents(filepath: str, doc_type: str) -> list[dict]:
+def parse_csv_to_documents(filepath: str, doc_type: str) -> list[dict[str, Any]]:
     """Parse a CSV file into structured document chunks with metadata."""
     documents = []
     filename = os.path.basename(filepath)
@@ -98,7 +99,7 @@ def parse_csv_to_documents(filepath: str, doc_type: str) -> list[dict]:
     return documents
 
 
-def parse_text_to_documents(filepath: str, doc_type: str) -> list[dict]:
+def parse_text_to_documents(filepath: str, doc_type: str) -> list[dict[str, Any]]:
     """Parse a text file into semantically chunked documents with metadata."""
     documents = []
     filename = os.path.basename(filepath)
@@ -150,7 +151,7 @@ def parse_text_to_documents(filepath: str, doc_type: str) -> list[dict]:
     return documents
 
 
-def ingest_all_data() -> list[dict]:
+def ingest_all_data() -> list[dict[str, Any]]:
     """Process all files in the Initial_Data directory."""
     all_documents = []
 
@@ -180,12 +181,12 @@ def ingest_all_data() -> list[dict]:
     return all_documents
 
 
-def embed_and_index(documents: list[dict]) -> chromadb.Collection:
+def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
     """Embed documents using Google Generative AI and index in ChromaDB."""
     print("\n[EMBEDDING] Initializing Google Generative AI embeddings...")
     embeddings_model = GoogleGenerativeAIEmbeddings(
-        model="models/text-embedding-004",
-        google_api_key=GOOGLE_API_KEY,
+        model="gemini-embedding-001",
+        google_api_key=GEMINI_API_KEY,
     )
 
     print("[INDEXING] Setting up ChromaDB...")
@@ -202,10 +203,12 @@ def embed_and_index(documents: list[dict]) -> chromadb.Collection:
         metadata={"description": "Supply Chain Intelligence Knowledge Base"},
     )
 
+    EMBED_DIM = 768  # embedding-001 outputs 768-dimensional vectors
+
     # Process in batches to respect API limits
     batch_size = 20
     for i in range(0, len(documents), batch_size):
-        batch = documents[i : i + batch_size]
+        batch = list(documents)[i : i + batch_size]
         texts = [doc["text"] for doc in batch]
         metadatas = [doc["metadata"] for doc in batch]
         ids = [str(uuid.uuid4()) for _ in batch]
@@ -221,9 +224,11 @@ def embed_and_index(documents: list[dict]) -> chromadb.Collection:
             )
         except Exception as e:
             print(f"  [ERROR] Failed to embed batch: {e}")
-            # Fallback: add without embeddings (ChromaDB will use default)
+            # Fallback: zero-vectors preserve correct dimension so ChromaDB stays consistent
+            fallback_vectors = [[0.0] * EMBED_DIM for _ in texts]
             collection.add(
                 documents=texts,
+                embeddings=fallback_vectors,
                 metadatas=metadatas,
                 ids=ids,
             )
@@ -238,10 +243,22 @@ def test_retrieval(collection: chromadb.Collection):
     print("RETRIEVAL TESTS")
     print("=" * 60)
 
+    embeddings_model = GoogleGenerativeAIEmbeddings(
+        model="gemini-embedding-001",
+        google_api_key=GEMINI_API_KEY,
+    )
+
+    def embed_query(text: str) -> list:
+        try:
+            return embeddings_model.embed_query(text)
+        except Exception as e:
+            print(f"  [WARN] Could not embed query: {e}")
+            return [0.0] * 768
+
     # Test 1: General query
     print("\n--- Test 1: General inventory query ---")
     results = collection.query(
-        query_texts=["What is the current stock level of hydraulic pumps?"],
+        query_embeddings=[embed_query("What is the current stock level of hydraulic pumps?")],
         n_results=3,
     )
     for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
@@ -250,7 +267,7 @@ def test_retrieval(collection: chromadb.Collection):
     # Test 2: Metadata filtering - only supplier documents
     print("\n--- Test 2: Metadata filtering (supplier docs only) ---")
     results = collection.query(
-        query_texts=["Which supplier has the best reliability score?"],
+        query_embeddings=[embed_query("Which supplier has the best reliability score?")],
         n_results=3,
         where={"doc_type": "supplier"},
     )
@@ -260,7 +277,7 @@ def test_retrieval(collection: chromadb.Collection):
     # Test 3: Priority-based filtering
     print("\n--- Test 3: Critical priority items ---")
     results = collection.query(
-        query_texts=["Items that need immediate reorder"],
+        query_embeddings=[embed_query("Items that need immediate reorder")],
         n_results=3,
         where={"priority_level": "critical"},
     )

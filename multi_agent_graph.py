@@ -48,8 +48,8 @@ ANALYST_TOOLS = [generate_procurement_email]
 def get_agent_llm(agent_name: str):
     """Create an LLM bound to the specific agent's tools."""
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        model="gemini-2.5-flash",
+        google_api_key=os.getenv("GEMINI_API_KEY"),
         temperature=0.1,
         convert_system_message_to_human=True,
     )

@@ -17,10 +17,17 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from dotenv import load_dotenv
 
 from tools import ALL_TOOLS, generate_procurement_email
+
+import langgraph.checkpoint.sqlite.aio as sqlite_aio
+import json
+_original_dumps = sqlite_aio.json.dumps
+def _patched_dumps(obj, *args, **kwargs):
+    kwargs['default'] = lambda x: x.model_dump() if hasattr(x, "model_dump") else (x.dict() if hasattr(x, "dict") else str(x))
+    return _original_dumps(obj, *args, **kwargs)
+sqlite_aio.json.dumps = _patched_dumps
 
 load_dotenv()
 
@@ -36,8 +43,8 @@ class HITLState(TypedDict):
 
 def get_llm():
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        model="gemini-2.5-flash",
+        google_api_key=os.getenv("GEMINI_API_KEY"),
         temperature=0.1,
         convert_system_message_to_human=True,
     )
@@ -175,7 +182,7 @@ async def run_hitl_demo():
     print("HUMAN-IN-THE-LOOP DEMO")
     print("=" * 60)
 
-    async with AsyncSqliteSaver.from_conn_string(DB_PATH) as checkpointer:
+    async with sqlite_aio.AsyncSqliteSaver.from_conn_string(DB_PATH) as checkpointer:
         graph = build_hitl_graph(checkpointer)
 
         # Step 1: User requests an email
@@ -211,7 +218,7 @@ async def run_hitl_demo():
     edit_thread_id = "hitl-edit-demo-001"
     edit_config = {"configurable": {"thread_id": edit_thread_id}}
 
-    async with AsyncSqliteSaver.from_conn_string(DB_PATH) as checkpointer:
+    async with sqlite_aio.AsyncSqliteSaver.from_conn_string(DB_PATH) as checkpointer:
         graph = build_hitl_graph(checkpointer)
 
         # Step 1: User requests an email (will trigger approval gate)

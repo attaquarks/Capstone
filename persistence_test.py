@@ -10,7 +10,7 @@ This script demonstrates:
 
 import os
 import asyncio
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
@@ -22,21 +22,30 @@ from dotenv import load_dotenv
 from tools import ALL_TOOLS
 from graph import SYSTEM_PROMPT
 
-load_dotenv()
+import langgraph.checkpoint.sqlite.aio as sqlite_aio
+import json
+_original_dumps = sqlite_aio.json.dumps
+def _patched_dumps(obj, *args, **kwargs):
+    kwargs['default'] = lambda x: x.model_dump() if hasattr(x, "model_dump") else (x.dict() if hasattr(x, "dict") else str(x))
+    return _original_dumps(obj, *args, **kwargs)
+sqlite_aio.json.dumps = _patched_dumps
+
+load_dotenv(override=True)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "checkpoint_db.sqlite")
 
 
 class AgentState(TypedDict):
-    messages: Annotated[list, add_messages]
+    messages: Annotated[list[BaseMessage], add_messages]
 
 
 def get_llm():
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        model="gemini-2.5-flash",
+        google_api_key=os.getenv("GEMINI_API_KEY"),
         temperature=0.1,
         convert_system_message_to_human=True,
+        max_retries=0, # Fail fast on API quota limits
     )
     return llm.bind_tools(ALL_TOOLS)
 
@@ -44,7 +53,7 @@ def get_llm():
 def agent_node(state: AgentState) -> dict:
     llm = get_llm()
     messages = state["messages"]
-    if not messages or not isinstance(messages[0], SystemMessage):
+    if not messages or getattr(messages[0], "type", "") != "system":
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
     response = llm.invoke(messages)
     return {"messages": [response]}

@@ -61,7 +61,7 @@ An **Industrial Agentic AI System** built on LangGraph that acts as a Supply Cha
 
 ### Technology Stack
 - **Orchestration**: LangGraph (stateful multi-agent)
-- **LLM**: Google Gemini (via langchain-google-genai)
+- **LLM**: Google Gemini 2.0 Flash (via langchain-google-genai)
 - **Vector DB**: ChromaDB
 - **API Layer**: FastAPI
 - **Frontend**: Streamlit

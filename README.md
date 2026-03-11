@@ -40,7 +40,7 @@ pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Edit .env and add your GOOGLE_API_KEY
+# Edit .env and add your GEMINI_API_KEY
 ```
 
 ### 2. Ingest Data (Lab 2)
@@ -86,6 +86,6 @@ The agent helps supply chain managers with:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `GOOGLE_API_KEY` | Google Gemini API key | Yes |
+| `GEMINI_API_KEY` | Google Gemini API key | Yes |
 | `LANGCHAIN_TRACING_V2` | Enable LangSmith tracing | No |
 | `LANGCHAIN_API_KEY` | LangSmith API key | No |

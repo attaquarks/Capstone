@@ -29,7 +29,7 @@ load_dotenv()
 
 # --- Configuration ---
 DB_PATH = os.path.join(os.path.dirname(__file__), "feedback_log.db")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 
 # --- Feedback Database ---
@@ -122,8 +122,8 @@ def get_agent_response(user_message: str) -> str:
         from graph import SYSTEM_PROMPT
 
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            google_api_key=GOOGLE_API_KEY,
+            model="gemini-2.5-flash",
+            google_api_key=GEMINI_API_KEY,
             temperature=0.1,
             convert_system_message_to_human=True,
         )
@@ -155,7 +155,7 @@ def get_agent_response(user_message: str) -> str:
         return final.content if hasattr(final, "content") else str(final)
 
     except Exception as e:
-        return f"Agent error: {str(e)}. Please ensure GOOGLE_API_KEY is set."
+        return f"Agent error: {str(e)}. Please ensure GEMINI_API_KEY is set."
 
 
 # --- Streamlit UI ---
