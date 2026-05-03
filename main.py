@@ -34,7 +34,13 @@ from guardrails_config import check_guardrails, sanitize_output, SafetyVerdict
 load_dotenv()
 
 # --- Global State ---
-DB_PATH = os.path.join(os.path.dirname(__file__), "checkpoint_db.sqlite")
+# Honour CHECKPOINT_DB_PATH from the environment so the checkpoint SQLite DB
+# can live on a Docker volume (industrial deployment) without changing code.
+DB_PATH = os.getenv(
+    "CHECKPOINT_DB_PATH",
+    os.path.join(os.path.dirname(__file__), "checkpoint_db.sqlite"),
+)
+os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
 checkpointer = None
 compiled_graph = None
 

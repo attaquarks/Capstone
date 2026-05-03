@@ -24,6 +24,21 @@ CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 COLLECTION_NAME = "supply_chain_knowledge"
 
 
+# --- Chroma client factory ---
+def get_chroma_client():
+    """Return a ChromaDB client.
+
+    When `CHROMA_HOST` is set we connect to a remote ChromaDB service over
+    HTTP (the multi-service Docker Compose deployment). Otherwise we fall
+    back to a local PersistentClient on disk for plain local development.
+    """
+    chroma_host = os.getenv("CHROMA_HOST")
+    if chroma_host:
+        chroma_port = int(os.getenv("CHROMA_PORT", "8000"))
+        return chromadb.HttpClient(host=chroma_host, port=chroma_port)
+    return chromadb.PersistentClient(path=CHROMA_DIR)
+
+
 # --- Helper: Load CSV data ---
 def _load_csv(filename: str) -> list[dict]:
     """Load a CSV file from the Initial_Data directory."""
@@ -175,7 +190,7 @@ def search_suppliers(query: str, country: Optional[str] = None) -> str:
     """Search the knowledge base for supplier information using semantic search.
     Can filter by country. Use this when the user asks about suppliers, pricing, or vendor options."""
     try:
-        client = chromadb.PersistentClient(path=CHROMA_DIR)
+        client = get_chroma_client()
         collection = client.get_collection(COLLECTION_NAME)
 
         where_filter = {"doc_type": "supplier"}
@@ -269,7 +284,7 @@ def get_product_specs(product_id: str) -> str:
     """Retrieve detailed technical specifications for a product from the knowledge base.
     Use this when the user needs technical details, dimensions, or application information."""
     try:
-        client = chromadb.PersistentClient(path=CHROMA_DIR)
+        client = get_chroma_client()
         collection = client.get_collection(COLLECTION_NAME)
 
         results = collection.query(

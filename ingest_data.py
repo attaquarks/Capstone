@@ -190,7 +190,14 @@ def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
     )
 
     print("[INDEXING] Setting up ChromaDB...")
-    client = chromadb.PersistentClient(path=CHROMA_DIR)
+    chroma_host = os.getenv("CHROMA_HOST")
+    if chroma_host:
+        chroma_port = int(os.getenv("CHROMA_PORT", "8000"))
+        print(f"  Using remote ChromaDB at http://{chroma_host}:{chroma_port}")
+        client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
+    else:
+        print(f"  Using local PersistentClient at {CHROMA_DIR}")
+        client = chromadb.PersistentClient(path=CHROMA_DIR)
 
     # Delete existing collection if it exists
     try:

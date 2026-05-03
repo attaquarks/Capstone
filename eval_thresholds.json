@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "metrics": {
+    "faithfulness": {
+      "min": 0.7,
+      "description": "LLM-as-judge: does the agent's answer stay true to retrieved context and avoid hallucination?",
+      "justification": "0.70 is the inflection point we observed in Lab 7: above it, every regression we deliberately introduced (broken RAG context, corrupted prompt, fabricated facts) drops the score below 0.7, while every healthy build sits comfortably in the 0.80-0.90 range. Set 10% higher (0.77) and even healthy builds become flaky on the free-tier judge LLM (which exhibits +/-0.05 noise per call). Set 10% lower (0.63) and an outright hallucinating prompt still passes the gate."
+    },
+    "relevancy": {
+      "min": 0.75,
+      "description": "LLM-as-judge: does the answer address the user's specific question rather than offering generic platitudes?",
+      "justification": "Relevancy is more forgiving than faithfulness because LLM judges score on-topic-but-incomplete answers around 0.70-0.80. A floor of 0.75 catches answers that drift off-topic (e.g. responding with a generic supply-chain summary instead of a specific product lookup) without flagging legitimately concise replies. Higher (0.83) trips on naturally short answers; lower (0.68) lets vague responses through."
+    },
+    "tool_accuracy": {
+      "min": 0.8,
+      "description": "Heuristic: does the agent invoke the correct tool for each query (verified by keyword indicators)?",
+      "justification": "Tool selection is essentially a classification task and should be near-perfect on healthy builds. 0.80 catches the 'agent stops calling tools and answers from prompt memory' regression (which lands ~0.5) while tolerating the occasional borderline query where two tools are both reasonable. 10% higher (0.88) makes the gate too strict because the keyword heuristic itself has ~0.05 noise; 10% lower (0.72) admits builds where the agent skips tool calls roughly a quarter of the time."
+    }
+  }
+}
