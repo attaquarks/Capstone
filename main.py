@@ -22,10 +22,10 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
-from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import Annotated, TypedDict
 from dotenv import load_dotenv
 
+from llm_factory import build_llm
 from schema import ChatRequest, ChatResponse, HealthResponse
 from tools import ALL_TOOLS
 from graph import SYSTEM_PROMPT
@@ -54,13 +54,11 @@ class AgentState(TypedDict):
 # --- Graph Builder ---
 
 def get_llm():
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.1,
-        convert_system_message_to_human=True,
-    )
-    return llm.bind_tools(ALL_TOOLS)
+    """Initialize the agent's LLM. Mirrors graph.get_llm() so both the
+    interactive CLI (`python graph.py`) and the production FastAPI entrypoint
+    use the same provider/model selection logic (Google Gemini by default,
+    Groq when ``GROQ_API_KEY`` / ``LLM_PROVIDER=groq`` is set)."""
+    return build_llm(role="agent", temperature=0.1).bind_tools(ALL_TOOLS)
 
 
 def agent_node(state: AgentState) -> dict:

@@ -142,27 +142,33 @@ does not.)
 
 ### 1.5 End-to-end test evidence
 
-Captured in [`evidence/`](./evidence):
+Captured live in [`evidence/`](./evidence) on 2026-05-05 from a clean
+`docker compose build && docker compose up -d`:
 
-* `01-compose-ps.txt` — both services healthy after `docker compose up -d`.
-* `02-build-summary.txt` — multi-stage build log; final image 908 MB / 24
-  layers; second build is fully cached.
-* `03-curl-e2e.txt` — `/health` returns `agent_ready: true`; `/chat`
-  returns the correct answer (150 units of PRD-001, below reorder point);
-  follow-up turn invokes both `query_inventory` and `calculate_risk_score`;
-  conversation memory survives both restart variants.
+| File | What it shows |
+|---|---|
+| `01-docker-build.log` | Multi-stage build pulling `python:3.11-slim-bookworm`, installing wheels into `/opt/venv`, runtime stage `COPY --from=builder /opt/venv` only — confirms compilers never reach the runtime image. Final image **910 MB**. |
+| `02-docker-up.log` | `docker compose up -d` startup ordering: `chromadb` healthy → `agent-ingest` runs once and exits 0 → `agent-api` starts and goes healthy. |
+| `03-docker-ps.log`, `11-final-docker-ps.log` | Both long-running services in `(healthy)` state; `agent-ingest` shows `Exited (0)` (one-shot completed). |
+| `03-ingest-logs.log` | Vector-store seeder logs: 22 inventory rows, 13 supplier rows, 13 product specs ingested into ChromaDB; ends with `[COMPLETE] Knowledge base is ready.` |
+| `07-curl-health.log` | `/health` returns `{"status":"healthy","agent_ready":true}`. |
+| `08-curl-chat.log` | `POST /chat` with `"What is the current stock level of PRD-001?"` returns the correct answer — **150 units, below reorder point of 200, risk 38.2 / medium** — calling both `query_inventory` and `calculate_risk_score`. This is the mandated "agent receives a query and returns a correct answer" evidence. |
+| `09-persistence-restart.log` | Sends `"Remember the secret code is BLUE-42"` on `thread_id=persist-1`, then `docker compose restart agent-api`, then asks the same thread for the code. Agent answers **"the secret code you gave me is BLUE-42"** — proving the SQLite checkpoint volume survives container restart. |
+| `10-persistence-down-up.log` | Even harder test: `docker compose down` (containers removed) → `docker compose up -d` (fresh containers). Same `thread_id=persist-1` still answers **BLUE-42**, and a brand-new ChromaDB query (`get_product_specs` for Industrial Bearing 6205) returns the full spec sheet — proving both `chroma-data` and `checkpoint-data` named volumes preserve state across the container lifecycle. The agent-ingest job runs again (idempotent) but the existing volume already contains the index. |
+| `12-image-size.log` | Final image size + creation timestamp. |
 
-The agent receives a query (`What is the current stock level of PRD-001?`)
-and returns a correct answer (`150 units, below reorder point of 200`),
-calling exactly one tool (`query_inventory`). This satisfies the
-"agent receives a query and returns a correct answer" requirement.
+All captures were produced live in this session. They satisfy every
+bullet of "End-to-End Test": build logs, curl output, persistence proof,
+and a real agent answer to a real query.
 
 ### 1.6 Reproduction recipe
 
 ```bash
 git clone https://github.com/attaquarks/Capstone.git
 cd Capstone
-echo "GEMINI_API_KEY=$YOUR_KEY" > .env       # secret stays on host
+# Either Gemini or Groq works; pick one. Secret stays on host.
+echo "GEMINI_API_KEY=$YOUR_KEY" > .env
+# or:  printf 'GROQ_API_KEY=%s\nLLM_PROVIDER=groq\n' "$YOUR_GROQ_KEY" > .env
 docker compose up -d --build
 curl -s http://localhost:8000/health         # → "healthy"
 curl -s -X POST http://localhost:8000/chat \
@@ -183,9 +189,10 @@ curl -s -X POST http://localhost:8000/chat \
   `EVAL_THRESHOLD_PATH`, `EVAL_RESULTS_PATH`, `EVAL_REPORT_PATH`,
   `EVAL_SMOKE`, `EVAL_SMOKE_SIZE`, `EVAL_PAUSE_SECONDS`, `JUDGE_MODEL`,
   `AGENT_MODEL`).
-* **No hardcoded credentials.** `resolve_api_key()` reads either
-  `GEMINI_API_KEY` or `GOOGLE_API_KEY` and refuses to start if both are
-  missing.
+* **No hardcoded credentials.** `resolve_api_key()` reads any of
+  `GEMINI_API_KEY`, `GOOGLE_API_KEY`, or `GROQ_API_KEY` and refuses to
+  start when none are present. The actual provider (Gemini vs. Groq) is
+  picked by `llm_factory.build_llm()` (see Operational notes).
 * **Exit codes.** `0` when every metric meets its threshold; `1` otherwise.
   This is what the GitHub Actions runner reads to mark the job pass/fail.
 * **Machine-readable results.** Writes `eval_results.json` with this schema:
@@ -261,28 +268,40 @@ We include two small helper scripts:
 * [`scripts/restore_agent.py`](./scripts/restore_agent.py) — restores the
   original prompt from the backup and removes the `.bak` file.
 
-Both states are evidenced. Captured runs (preserved in `evidence/`):
+All three states of the cycle were captured live (smoke slice, 3 cases,
+LLM backend = Groq llama-3.3-70b-versatile / llama-3.1-8b-instant — see
+Operational notes below for why this is exposed as a knob):
 
-| State | `eval_results.json` | Avg faithfulness | Avg relevancy | Avg tool_accuracy | Exit code |
+| State | `eval_results.json` | Faithfulness | Relevancy | Tool accuracy | Exit code |
 |---|---|---|---|---|---|
-| **Healthy** (`evidence/04-eval_results_baseline.json`) | `overall_passed: true` | **0.95** | **1.00** | **1.00** | **0** ⇒ build PASS |
-| **Degraded** (`evidence/05-eval_results_degraded.json`) | `overall_passed: false` | 0.50 | 0.50 | 0.00 | **1** ⇒ build FAIL |
+| **Healthy baseline** (`evidence/04-eval_results_baseline.json`) | `overall_passed: true` | **0.950** ≥ 0.70 | **0.950** ≥ 0.75 | **0.833** ≥ 0.80 | **0** ⇒ build PASS |
+| **Degraded** (`evidence/05-eval_results_degraded.json`) | `overall_passed: false` | **0.417** < 0.70 | 0.950 | **0.619** < 0.80 | **1** ⇒ build FAIL |
+| **Restored** (`evidence/06-eval_results_restored.json`) | `overall_passed: true` | **0.950** ≥ 0.70 | **0.950** ≥ 0.75 | **0.833** ≥ 0.80 | **0** ⇒ build PASS |
 
-Reproduction for reviewers:
+The corresponding human-readable summaries are saved as `evidence/04..06-evaluation_report_*.md`,
+the console logs as `evidence/{04,05b,06b}-eval_smoke_*.log`, and the
+backup/restore traces as `evidence/05a-break_agent.log` /
+`evidence/06a-restore_agent.log`.
+
+Reproduction for reviewers (Groq path; substitute `GEMINI_API_KEY` for
+the Gemini path):
 
 ```bash
+export GROQ_API_KEY=...                 # or GEMINI_API_KEY=...
+export LLM_PROVIDER=groq                 # optional; auto-detected from key
+
 # Healthy run
-EVAL_SMOKE=1 EVAL_SMOKE_SIZE=2 python run_eval.py
+EVAL_SMOKE=1 EVAL_SMOKE_SIZE=3 python run_eval.py
 echo "exit=$?"          # 0
 
 # Break and re-run
 python scripts/break_agent.py
-EVAL_SMOKE=1 EVAL_SMOKE_SIZE=2 python run_eval.py
+EVAL_SMOKE=1 EVAL_SMOKE_SIZE=3 python run_eval.py
 echo "exit=$?"          # 1
 
 # Restore
 python scripts/restore_agent.py
-EVAL_SMOKE=1 EVAL_SMOKE_SIZE=2 python run_eval.py
+EVAL_SMOKE=1 EVAL_SMOKE_SIZE=3 python run_eval.py
 echo "exit=$?"          # 0
 ```
 
@@ -295,19 +314,31 @@ on a follow-up commit returns the gate to green.
 
 ## Operational notes
 
-* **Free-tier Gemini quotas** can interfere with rapid local re-runs. The
-  judge defaults to `gemini-2.5-flash-lite` (30 RPM free tier) precisely so
-  the smoke run stays under the rate limit. If you want a stricter judge,
-  set `JUDGE_MODEL=gemini-2.5-flash` and run with `EVAL_PAUSE_SECONDS=12` or
-  higher.
+* **Pluggable LLM backend (`llm_factory.py`).** Both the production agent
+  and the eval judge route through `llm_factory.build_llm()`, which picks
+  the provider at runtime:
+  * `LLM_PROVIDER=groq` (or `GROQ_API_KEY` set with no override) → Groq
+    (default models: `llama-3.3-70b-versatile` agent /
+    `llama-3.1-8b-instant` judge). Free tier on Groq is generous enough
+    (30 RPM, 1000 RPD) to run the full breaking-change cycle in ~3 min.
+  * `LLM_PROVIDER=google` (default) → Google Gemini (default models:
+    `gemini-2.5-flash` agent / `gemini-2.5-flash-lite` judge). Both
+    `GEMINI_API_KEY` and `GOOGLE_API_KEY` are accepted.
+  CI accepts either secret (or both) — see `.github/workflows/main.yml`.
+  This was added because the Gemini free tier caps at 20 requests/day per
+  model, which is too tight for a 3-stage breaking-change demo (each
+  stage burns ~12 calls).
+* **Judge rate limiting.** When using Gemini, set `EVAL_PAUSE_SECONDS=12`
+  to stay under the 5 RPM cap on `gemini-2.5-flash`. Groq does not need
+  spacing for the 3-case smoke slice.
 * **The `evidence/` directory is git-ignored** by design — it contains
   outputs of local end-to-end runs and is not meant to be a versioned
   artifact. The captures referenced in this report were taken during the
-  development run and uploaded into the PR description so reviewers can see
-  them without re-running the pipeline.
-* **CI itself produces fresh artifacts** on every run, downloadable from the
-  workflow run page (`evaluation-${{ github.run_id }}` artifact, retained
-  30 days).
+  development run and uploaded into the PR description so reviewers can
+  see them without re-running the pipeline.
+* **CI itself produces fresh artifacts** on every run, downloadable from
+  the workflow run page (`evaluation-${{ github.run_id }}` artifact,
+  retained 30 days).
 
 ---
 
@@ -318,8 +349,9 @@ on a follow-up commit returns the gate to green.
 | Reproducible container image | `Dockerfile` | Multi-stage, slim base, virtualenv copy, non-root |
 | Compose / orchestration | `docker-compose.yaml` | Two services + ingest one-shot, two volumes, internal network |
 | Secret-free image | `.dockerignore`, `.env.example` | `.env` excluded; secrets injected via `env_file`/`environment` |
-| End-to-end test evidence | `evidence/01–03` | Healthy compose ps, build log, curl outputs, persistence proofs |
-| CI-ready evaluation script | `run_eval.py` | Env-only credentials, exit 0/1, JSON output |
-| Pipeline config | `.github/workflows/main.yml` | Push trigger, secret injection, PR comment summary |
+| End-to-end test evidence | `evidence/01–03,07–12` | Build log, compose ps, curl `/health` + `/chat`, restart-persistence, down/up-persistence, ingest logs |
+| CI-ready evaluation script | `run_eval.py` | Env-only credentials (Gemini *or* Groq), exit 0/1, JSON output |
+| Pipeline config | `.github/workflows/main.yml` | Push trigger, secret injection (Gemini + Groq), PR comment summary |
 | Versioned thresholds | `eval_thresholds.json` | Three metrics + per-metric justifications |
-| Breaking-change demo | `scripts/break_agent.py`, `scripts/restore_agent.py`, `evidence/04–05` | Both states evidenced |
+| Breaking-change demo | `scripts/break_agent.py`, `scripts/restore_agent.py`, `evidence/04–06` | All three states evidenced (healthy → degraded → restored) |
+| Pluggable LLM backend | `llm_factory.py` | Single point of provider selection (Gemini / Groq) used by agent + judge |

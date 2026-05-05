@@ -66,7 +66,12 @@ services:
       chromadb:
         condition: service_healthy
     environment:
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      # The factory in llm_factory.py picks Groq if GROQ_API_KEY is set, else
+      # falls back to Gemini. Empty values are passed through harmlessly.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      AGENT_MODEL: ${AGENT_MODEL:-}
       CHROMA_HOST: chromadb
       CHROMA_PORT: "8000"
       PYTHONPATH: /app
@@ -92,7 +97,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      AGENT_MODEL: ${AGENT_MODEL:-}
       CHROMA_HOST: chromadb
       CHROMA_PORT: "8000"
       CHECKPOINT_DB_PATH: /app/checkpoints/checkpoint_db.sqlite

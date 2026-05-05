@@ -57,13 +57,23 @@ RESULTS_JSON_PATH = os.getenv("EVAL_RESULTS_PATH", os.path.join(BASE_DIR, "eval_
 # Configuration helpers
 # ---------------------------------------------------------------------------
 def resolve_api_key() -> str:
-    """Return the Gemini API key from the environment.
+    """Return whichever LLM-provider API key is present in the environment.
 
-    Accepts both `GEMINI_API_KEY` (the project's canonical name) and
-    `GOOGLE_API_KEY` (the upstream langchain-google-genai default), so the
-    script works with either CI secret name.
+    Accepts:
+      * ``GEMINI_API_KEY`` (the project's canonical Gemini name)
+      * ``GOOGLE_API_KEY`` (the upstream langchain-google-genai default)
+      * ``GROQ_API_KEY``  (the Groq fallback added in the LLM factory)
+
+    The exact key returned only matters for the Gemini path; the Groq path
+    consumes ``GROQ_API_KEY`` directly. The function is primarily used to
+    fail fast when the environment has no usable credentials at all.
     """
-    return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+    return (
+        os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GROQ_API_KEY")
+        or ""
+    )
 
 
 def resolve_threshold_path() -> str:
@@ -128,10 +138,18 @@ def _parse_score(content: str) -> float | None:
 def _make_judge_llm(api_key: str):
     """Build the LLM-as-judge instance.
 
-    Uses gemini-2.5-flash-lite by default — its free-tier RPM (30) is high
-    enough that we don't trip rate limits on small smoke runs. Override with
-    JUDGE_MODEL if you want a stricter judge.
-    """
+    Provider is chosen by the same factory used by the agent (see
+    ``llm_factory.build_llm``). When ``LLM_PROVIDER=groq`` or ``GROQ_API_KEY``
+    is set the judge runs on Groq; otherwise it runs on Google Gemini. The
+    ``api_key`` argument is preserved for back-compat (Gemini path) but is
+    ignored when Groq is selected — Groq picks up ``GROQ_API_KEY`` directly."""
+    from llm_factory import build_llm, resolve_provider
+
+    if resolve_provider() == "groq":
+        return build_llm(role="judge", temperature=0.0)
+
+    # Gemini path: respect the explicit api_key the caller resolved (allows
+    # CI to inject either GEMINI_API_KEY or GOOGLE_API_KEY).
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     return ChatGoogleGenerativeAI(
@@ -219,9 +237,17 @@ def run_evaluation(smoke: bool = False, smoke_size: int = 3) -> int:
     api_key = resolve_api_key()
     no_live = os.getenv("EVAL_NO_LIVE") == "1"
     if not api_key and not no_live:
-        print("[FATAL] No GEMINI_API_KEY/GOOGLE_API_KEY found in the environment.")
+        print(
+            "[FATAL] No LLM credentials in the environment "
+            "(expected GEMINI_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY)."
+        )
         print("CI must inject the key via the platform's secret store.")
         return 1
+
+    # Surface the active provider/model selection so CI logs make it obvious
+    # which backend produced these scores.
+    from llm_factory import describe_provider
+    print(f"LLM backend: {describe_provider()}")
 
     dataset = load_test_dataset()
     thresholds = load_thresholds()

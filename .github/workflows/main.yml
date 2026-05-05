@@ -86,17 +86,21 @@ jobs:
 
       - name: Run evaluation (smoke slice)
         env:
-          # Injected from the platform's secret store; never committed.
+          # Both LLM providers are accepted; whichever secret is configured
+          # in the repo determines the backend. Empty values are passed
+          # through harmlessly (the provider-selection logic in
+          # llm_factory.py keys off whichever variable is non-empty).
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Dual-key support — accepted by run_eval.py either way.
           GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
           TEST_DATASET_PATH: ./test_dataset.json
           EVAL_THRESHOLD_PATH: ./eval_thresholds.json
           EVAL_SMOKE: "1"
           EVAL_SMOKE_SIZE: "3"
         run: |
-          if [ -z "${GEMINI_API_KEY}" ]; then
-            echo "::error::GEMINI_API_KEY secret is not configured. Add it under Settings -> Secrets -> Actions."
+          if [ -z "${GEMINI_API_KEY}" ] && [ -z "${GROQ_API_KEY}" ]; then
+            echo "::error::Neither GEMINI_API_KEY nor GROQ_API_KEY is configured. Add one under Settings -> Secrets -> Actions."
             exit 1
           fi
           python run_eval.py
