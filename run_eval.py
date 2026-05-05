@@ -1,53 +1,166 @@
 """
-Lab 7 & Lab 10: Evaluation Pipeline (CI-Ready)
-Runs the agent against a test dataset and scores using LLM-as-a-Judge.
+CI-Ready Evaluation Pipeline.
 
-Metrics:
-- Faithfulness: Does the answer stay true to retrieved context?
-- Answer Relevancy: How well does the response address the user's prompt?
-- Tool Call Accuracy: Did the agent call the correct tool?
+Runs the agent against a test dataset and scores it via LLM-as-a-Judge.
+Designed to run headlessly in CI:
 
-Exit codes (for CI/CD - Lab 10):
-- sys.exit(0) if scores are above threshold
-- sys.exit(1) if scores are below threshold
+  * Reads ALL credentials from environment variables (no prompts, no
+    hardcoded keys). Accepts either GEMINI_API_KEY or GOOGLE_API_KEY.
+  * Loads thresholds from a versioned JSON file
+    (eval_thresholds.json by default; legacy eval_threshold_config.json
+    is also accepted).
+  * Writes a machine-readable results file (eval_results.json) listing
+    each metric's name, score, threshold, and pass/fail status.
+  * Writes a human-readable Markdown report (evaluation_report.md).
+  * Exits 0 when every metric meets its threshold, 1 otherwise — the CI
+    platform reads this exit code to mark the build pass/fail.
+
+Optional knobs:
+  EVAL_SMOKE=1            (or --smoke) — run only the first N (default 3)
+                          test cases. Useful for fast CI feedback without
+                          burning the full LLM quota.
+  EVAL_SMOKE_SIZE=<int>   — size of the smoke slice when EVAL_SMOKE=1.
+  EVAL_NO_LIVE=1          — skip live LLM judging entirely. Used purely
+                          for unit-testing the pipeline plumbing without
+                          a real key. The script will assign neutral
+                          mid-range scores and exit non-zero unless the
+                          thresholds are very low. Intended for the
+                          fork-safe lint/syntax CI job, NOT for the real
+                          quality gate.
 """
 
-import os
-import sys
-import json
-import time
-from datetime import datetime
+from __future__ import annotations
 
-from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+import argparse
+import json
+import os
+import re
+import sys
+import time
+from datetime import datetime, timezone
+from typing import Any
+
 from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage
 
 load_dotenv()
 
 # --- Configuration ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_PATH = os.getenv("TEST_DATASET_PATH", os.path.join(BASE_DIR, "test_dataset.json"))
-THRESHOLD_PATH = os.getenv("EVAL_THRESHOLD_PATH", os.path.join(BASE_DIR, "eval_threshold_config.json"))
-REPORT_PATH = os.path.join(BASE_DIR, "evaluation_report.md")
+THRESHOLD_PATH = os.getenv("EVAL_THRESHOLD_PATH")
+REPORT_PATH = os.getenv("EVAL_REPORT_PATH", os.path.join(BASE_DIR, "evaluation_report.md"))
+RESULTS_JSON_PATH = os.getenv("EVAL_RESULTS_PATH", os.path.join(BASE_DIR, "eval_results.json"))
+
+
+# ---------------------------------------------------------------------------
+# Configuration helpers
+# ---------------------------------------------------------------------------
+def resolve_api_key() -> str:
+    """Return whichever LLM-provider API key is present in the environment.
+
+    Accepts:
+      * ``GEMINI_API_KEY`` (the project's canonical Gemini name)
+      * ``GOOGLE_API_KEY`` (the upstream langchain-google-genai default)
+      * ``GROQ_API_KEY``  (the Groq fallback added in the LLM factory)
+
+    The exact key returned only matters for the Gemini path; the Groq path
+    consumes ``GROQ_API_KEY`` directly. The function is primarily used to
+    fail fast when the environment has no usable credentials at all.
+    """
+    return (
+        os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GROQ_API_KEY")
+        or ""
+    )
+
+
+def resolve_threshold_path() -> str:
+    """Find the threshold config file. Prefers `eval_thresholds.json`,
+    falls back to the legacy `eval_threshold_config.json`."""
+    if THRESHOLD_PATH and os.path.exists(THRESHOLD_PATH):
+        return THRESHOLD_PATH
+    canonical = os.path.join(BASE_DIR, "eval_thresholds.json")
+    if os.path.exists(canonical):
+        return canonical
+    legacy = os.path.join(BASE_DIR, "eval_threshold_config.json")
+    if os.path.exists(legacy):
+        return legacy
+    return canonical  # may not exist; load_thresholds() handles defaults
 
 
 def load_test_dataset() -> list[dict]:
-    """Load the evaluation dataset."""
-    with open(DATASET_PATH, "r") as f:
+    with open(DATASET_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def load_thresholds() -> dict:
-    """Load minimum acceptable scores from config."""
+def load_thresholds() -> dict[str, float]:
+    """Load minimum acceptable scores from config. Supports a 'metrics' block
+    (canonical schema) plus the legacy flat schema for backward compatibility."""
+    path = resolve_threshold_path()
     try:
-        with open(THRESHOLD_PATH, "r") as f:
-            return json.load(f)
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
     except FileNotFoundError:
         return {"min_faithfulness": 0.7, "min_relevancy": 0.75, "min_tool_accuracy": 0.8}
 
+    if isinstance(raw.get("metrics"), dict):
+        return {f"min_{k}": float(v["min"]) for k, v in raw["metrics"].items() if "min" in v}
+    return {k: float(v) for k, v in raw.items() if k.startswith("min_")}
+
+
+# ---------------------------------------------------------------------------
+# LLM-as-a-Judge scoring
+# ---------------------------------------------------------------------------
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _parse_score(content: str) -> float | None:
+    """Extract the first numeric token from a judge response.
+
+    The judge is asked to answer with a single float in [0, 1]. In practice
+    Gemini sometimes wraps the number in extra prose ("Score: 0.85") or
+    Markdown. Pulling out the first number is more robust than `float(s)`
+    which fails on those cases and pollutes scores with neutral 0.5 fallbacks.
+    """
+    if not content:
+        return None
+    match = _NUMBER_RE.search(content)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _make_judge_llm(api_key: str):
+    """Build the LLM-as-judge instance.
+
+    Provider is chosen by the same factory used by the agent (see
+    ``llm_factory.build_llm``). When ``LLM_PROVIDER=groq`` or ``GROQ_API_KEY``
+    is set the judge runs on Groq; otherwise it runs on Google Gemini. The
+    ``api_key`` argument is preserved for back-compat (Gemini path) but is
+    ignored when Groq is selected — Groq picks up ``GROQ_API_KEY`` directly."""
+    from llm_factory import build_llm, resolve_provider
+
+    if resolve_provider() == "groq":
+        return build_llm(role="judge", temperature=0.0)
+
+    # Gemini path: respect the explicit api_key the caller resolved (allows
+    # CI to inject either GEMINI_API_KEY or GOOGLE_API_KEY).
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    return ChatGoogleGenerativeAI(
+        model=os.getenv("JUDGE_MODEL", "gemini-2.5-flash-lite"),
+        google_api_key=api_key,
+        temperature=0.0,
+        convert_system_message_to_human=True,
+    )
+
 
 def judge_faithfulness(query: str, expected: str, actual: str, judge_llm) -> float:
-    """Use LLM-as-a-Judge to score faithfulness (0.0 to 1.0)."""
     prompt = f"""You are an evaluation judge. Score the FAITHFULNESS of an AI agent's response.
 Faithfulness measures whether the response stays true to the expected ground truth without hallucinating.
 
@@ -62,17 +175,17 @@ Consider:
 - Minor wording differences are acceptable if facts match.
 
 Respond with ONLY a number between 0.0 and 1.0 (e.g., 0.85)."""
-
     try:
         response = judge_llm.invoke([HumanMessage(content=prompt)])
-        score = float(response.content.strip())
+        score = _parse_score(str(response.content))
+        if score is None:
+            return 0.5
         return max(0.0, min(1.0, score))
-    except (ValueError, Exception):
-        return 0.5  # Default score if parsing fails
+    except Exception:
+        return 0.5
 
 
 def judge_relevancy(query: str, actual: str, judge_llm) -> float:
-    """Use LLM-as-a-Judge to score answer relevancy (0.0 to 1.0)."""
     prompt = f"""You are an evaluation judge. Score the RELEVANCY of an AI agent's response.
 Relevancy measures how well the response addresses the user's specific question.
 
@@ -86,17 +199,17 @@ Consider:
 - Does it provide actionable information?
 
 Respond with ONLY a number between 0.0 and 1.0 (e.g., 0.85)."""
-
     try:
         response = judge_llm.invoke([HumanMessage(content=prompt)])
-        score = float(response.content.strip())
+        score = _parse_score(str(response.content))
+        if score is None:
+            return 0.5
         return max(0.0, min(1.0, score))
-    except (ValueError, Exception):
+    except Exception:
         return 0.5
 
 
 def check_tool_accuracy(expected_tool: str, actual_response: str) -> float:
-    """Check if the agent used the correct tool (simple heuristic)."""
     tool_indicators = {
         "query_inventory": ["stock", "inventory", "current stock", "reorder point", "unit cost"],
         "calculate_risk_score": ["risk score", "risk level", "critical", "high", "medium", "low", "recommendation"],
@@ -104,46 +217,63 @@ def check_tool_accuracy(expected_tool: str, actual_response: str) -> float:
         "generate_procurement_email": ["procurement email", "request for quote", "rfq", "dear", "quotation"],
         "get_product_specs": ["specifications", "dimensions", "material", "type:", "voltage", "power"],
     }
-
     indicators = tool_indicators.get(expected_tool, [])
     if not indicators:
         return 0.5
-
     actual_lower = actual_response.lower()
     matches = sum(1 for ind in indicators if ind in actual_lower)
     return min(1.0, matches / max(1, len(indicators) * 0.4))
 
 
-def run_evaluation():
-    """Run the full evaluation pipeline."""
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
+def run_evaluation(smoke: bool = False, smoke_size: int = 3) -> int:
     print("=" * 60)
     print("EVALUATION PIPELINE")
-    print(f"Started: {datetime.now().isoformat()}")
+    print(f"Started: {datetime.now(timezone.utc).isoformat()}")
     print("=" * 60)
+
+    api_key = resolve_api_key()
+    no_live = os.getenv("EVAL_NO_LIVE") == "1"
+    if not api_key and not no_live:
+        print(
+            "[FATAL] No LLM credentials in the environment "
+            "(expected GEMINI_API_KEY, GOOGLE_API_KEY, or GROQ_API_KEY)."
+        )
+        print("CI must inject the key via the platform's secret store.")
+        return 1
+
+    # Surface the active provider/model selection so CI logs make it obvious
+    # which backend produced these scores.
+    from llm_factory import describe_provider
+    print(f"LLM backend: {describe_provider()}")
 
     dataset = load_test_dataset()
     thresholds = load_thresholds()
+
+    if smoke:
+        dataset = dataset[:smoke_size]
+        print(f"[smoke] Restricting evaluation to first {len(dataset)} test cases.")
     print(f"Loaded {len(dataset)} test cases")
+    print(f"Threshold path: {resolve_threshold_path()}")
     print(f"Thresholds: {thresholds}")
 
-    # Initialize judge LLM
-    judge_llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.0,
-        convert_system_message_to_human=True,
-    )
+    if no_live:
+        print("[EVAL_NO_LIVE=1] Skipping live LLM calls; using neutral 0.5 scores.")
+        judge_llm = None
+        graph = None
+    else:
+        judge_llm = _make_judge_llm(api_key)
+        try:
+            from graph import build_graph
 
-    # Initialize the agent graph
-    try:
-        from graph import build_graph
-        graph = build_graph()
-    except Exception as e:
-        print(f"[FATAL] Failed to build agent graph: {e}")
-        print("Cannot run evaluation without a functional agent. Exiting with failure.")
-        sys.exit(1)
+            graph = build_graph()
+        except Exception as e:
+            print(f"[FATAL] Failed to build agent graph: {e}")
+            return 1
 
-    results = []
+    results: list[dict[str, Any]] = []
     for i, test_case in enumerate(dataset):
         query = test_case["query"]
         expected = test_case["expected_answer"]
@@ -152,89 +282,117 @@ def run_evaluation():
 
         print(f"\n[{i+1}/{len(dataset)}] Testing: {query[:60]}...")
 
-        # Get agent response
-        try:
-            result = graph.invoke({"messages": [HumanMessage(content=query)]})
-            actual = result["messages"][-1].content
-        except Exception as e:
-            actual = f"Agent error: {str(e)}"
+        if no_live:
+            actual = expected  # mirror expected so plumbing tests don't fail noisily
+        else:
+            try:
+                result = graph.invoke({"messages": [HumanMessage(content=query)]})
+                actual = result["messages"][-1].content
+            except Exception as e:
+                actual = f"Agent error: {str(e)}"
 
-        # Score with LLM judges
-        time.sleep(1)  # Rate limiting for free tier
-        faithfulness = judge_faithfulness(query, expected, actual, judge_llm)
-        time.sleep(1)
-        relevancy = judge_relevancy(query, actual, judge_llm)
+        if no_live:
+            faithfulness = relevancy = 0.5
+        else:
+            # Gemini free-tier RPM is tight; pace ourselves between calls so
+            # the rate limiter doesn't trigger automatic retries (which add
+            # noise to the scores).
+            time.sleep(float(os.getenv("EVAL_PAUSE_SECONDS", "3")))
+            faithfulness = judge_faithfulness(query, expected, actual, judge_llm)
+            time.sleep(float(os.getenv("EVAL_PAUSE_SECONDS", "3")))
+            relevancy = judge_relevancy(query, actual, judge_llm)
+            time.sleep(float(os.getenv("EVAL_PAUSE_SECONDS", "3")))
         tool_accuracy = check_tool_accuracy(expected_tool, actual)
 
         results.append({
             "query": query,
             "category": category,
             "expected_tool": expected_tool,
+            "expected_answer": expected,
+            "actual_response": actual,
             "faithfulness": faithfulness,
             "relevancy": relevancy,
             "tool_accuracy": tool_accuracy,
             "passed": (
-                faithfulness >= thresholds["min_faithfulness"]
-                and relevancy >= thresholds["min_relevancy"]
-                and tool_accuracy >= thresholds["min_tool_accuracy"]
+                faithfulness >= thresholds.get("min_faithfulness", 0.7)
+                and relevancy >= thresholds.get("min_relevancy", 0.75)
+                and tool_accuracy >= thresholds.get("min_tool_accuracy", 0.8)
             ),
         })
-
         print(f"  Faithfulness: {faithfulness:.2f} | Relevancy: {relevancy:.2f} | Tool Acc: {tool_accuracy:.2f}")
 
-    # Calculate averages
-    avg_faithfulness = sum(r["faithfulness"] for r in results) / len(results) if results else 0
-    avg_relevancy = sum(r["relevancy"] for r in results) / len(results) if results else 0
-    avg_tool_accuracy = sum(r["tool_accuracy"] for r in results) / len(results) if results else 0
-    pass_rate = sum(1 for r in results if r["passed"]) / len(results) if results else 0
+    avg_faithfulness = sum(r["faithfulness"] for r in results) / len(results) if results else 0.0
+    avg_relevancy = sum(r["relevancy"] for r in results) / len(results) if results else 0.0
+    avg_tool_accuracy = sum(r["tool_accuracy"] for r in results) / len(results) if results else 0.0
+    pass_rate = sum(1 for r in results if r["passed"]) / len(results) if results else 0.0
 
-    # Generate report
+    metric_payload = [
+        {
+            "name": "faithfulness",
+            "score": avg_faithfulness,
+            "threshold": thresholds.get("min_faithfulness", 0.7),
+            "passed": avg_faithfulness >= thresholds.get("min_faithfulness", 0.7),
+        },
+        {
+            "name": "relevancy",
+            "score": avg_relevancy,
+            "threshold": thresholds.get("min_relevancy", 0.75),
+            "passed": avg_relevancy >= thresholds.get("min_relevancy", 0.75),
+        },
+        {
+            "name": "tool_accuracy",
+            "score": avg_tool_accuracy,
+            "threshold": thresholds.get("min_tool_accuracy", 0.8),
+            "passed": avg_tool_accuracy >= thresholds.get("min_tool_accuracy", 0.8),
+        },
+    ]
+    overall_passed = all(m["passed"] for m in metric_payload)
+
+    payload = {
+        "schema_version": 1,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "smoke_mode": smoke,
+        "no_live_mode": no_live,
+        "n_cases": len(results),
+        "metrics": metric_payload,
+        "pass_rate": pass_rate,
+        "overall_passed": overall_passed,
+        "per_case": results,
+    }
+    with open(RESULTS_JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print(f"\nMachine-readable results: {RESULTS_JSON_PATH}")
+
     generate_report(results, avg_faithfulness, avg_relevancy, avg_tool_accuracy, pass_rate, thresholds)
 
-    # Print summary
     print("\n" + "=" * 60)
     print("EVALUATION SUMMARY")
     print("=" * 60)
-    print(f"  Average Faithfulness: {avg_faithfulness:.3f} (threshold: {thresholds['min_faithfulness']})")
-    print(f"  Average Relevancy:    {avg_relevancy:.3f} (threshold: {thresholds['min_relevancy']})")
-    print(f"  Average Tool Accuracy: {avg_tool_accuracy:.3f} (threshold: {thresholds['min_tool_accuracy']})")
-    print(f"  Overall Pass Rate:    {pass_rate:.1%}")
+    for m in metric_payload:
+        status = "PASS" if m["passed"] else "FAIL"
+        print(f"  {m['name']:<14} {m['score']:.3f} (>= {m['threshold']:.2f})  {status}")
+    print(f"  per-case pass rate: {pass_rate:.1%}")
 
-    # CI/CD exit code logic (Lab 10)
-    all_passed = (
-        avg_faithfulness >= thresholds["min_faithfulness"]
-        and avg_relevancy >= thresholds["min_relevancy"]
-        and avg_tool_accuracy >= thresholds["min_tool_accuracy"]
-    )
-
-    if all_passed:
+    if overall_passed:
         print("\n[PASS] All metrics meet minimum thresholds.")
         return 0
-    else:
-        print("\n[FAIL] One or more metrics below threshold.")
-        if avg_faithfulness < thresholds["min_faithfulness"]:
-            print(f"  FAILED: Faithfulness {avg_faithfulness:.3f} < {thresholds['min_faithfulness']}")
-        if avg_relevancy < thresholds["min_relevancy"]:
-            print(f"  FAILED: Relevancy {avg_relevancy:.3f} < {thresholds['min_relevancy']}")
-        if avg_tool_accuracy < thresholds["min_tool_accuracy"]:
-            print(f"  FAILED: Tool Accuracy {avg_tool_accuracy:.3f} < {thresholds['min_tool_accuracy']}")
-        return 1
+    print("\n[FAIL] One or more metrics below threshold.")
+    return 1
 
 
 def generate_report(results, avg_f, avg_r, avg_t, pass_rate, thresholds):
-    """Generate the evaluation_report.md file."""
     report = f"""# Evaluation Report
 
 ## Summary
 | Metric | Score | Threshold | Status |
 |--------|-------|-----------|--------|
-| Average Faithfulness | {avg_f:.3f} | {thresholds['min_faithfulness']} | {'PASS' if avg_f >= thresholds['min_faithfulness'] else 'FAIL'} |
-| Average Relevancy | {avg_r:.3f} | {thresholds['min_relevancy']} | {'PASS' if avg_r >= thresholds['min_relevancy'] else 'FAIL'} |
-| Average Tool Accuracy | {avg_t:.3f} | {thresholds['min_tool_accuracy']} | {'PASS' if avg_t >= thresholds['min_tool_accuracy'] else 'FAIL'} |
+| Average Faithfulness | {avg_f:.3f} | {thresholds.get('min_faithfulness', 0.7)} | {'PASS' if avg_f >= thresholds.get('min_faithfulness', 0.7) else 'FAIL'} |
+| Average Relevancy | {avg_r:.3f} | {thresholds.get('min_relevancy', 0.75)} | {'PASS' if avg_r >= thresholds.get('min_relevancy', 0.75) else 'FAIL'} |
+| Average Tool Accuracy | {avg_t:.3f} | {thresholds.get('min_tool_accuracy', 0.8)} | {'PASS' if avg_t >= thresholds.get('min_tool_accuracy', 0.8) else 'FAIL'} |
 | Overall Pass Rate | {pass_rate:.1%} | - | - |
 
 ## Test Date
-{datetime.now().isoformat()}
+{datetime.now(timezone.utc).isoformat()}
 
 ## Detailed Results
 
@@ -245,25 +403,27 @@ def generate_report(results, avg_f, avg_r, avg_t, pass_rate, thresholds):
         status = "PASS" if r["passed"] else "FAIL"
         report += f"| {i+1} | {r['query'][:50]}... | {r['category']} | {r['faithfulness']:.2f} | {r['relevancy']:.2f} | {r['tool_accuracy']:.2f} | {status} |\n"
 
-    report += f"""
-## Category Breakdown
-
-"""
-    categories = set(r["category"] for r in results)
-    for cat in sorted(categories):
+    report += "\n## Category Breakdown\n\n"
+    categories = sorted({r["category"] for r in results})
+    for cat in categories:
         cat_results = [r for r in results if r["category"] == cat]
         cat_f = sum(r["faithfulness"] for r in cat_results) / len(cat_results)
         cat_r = sum(r["relevancy"] for r in cat_results) / len(cat_results)
-        report += f"### {cat.title()}\n"
-        report += f"- Samples: {len(cat_results)}\n"
-        report += f"- Avg Faithfulness: {cat_f:.3f}\n"
-        report += f"- Avg Relevancy: {cat_r:.3f}\n\n"
+        report += f"### {cat.title()}\n- Samples: {len(cat_results)}\n- Avg Faithfulness: {cat_f:.3f}\n- Avg Relevancy: {cat_r:.3f}\n\n"
 
-    with open(REPORT_PATH, "w") as f:
+    with open(REPORT_PATH, "w", encoding="utf-8") as f:
         f.write(report)
-    print(f"\nReport saved to: {REPORT_PATH}")
+    print(f"Markdown report saved to: {REPORT_PATH}")
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="CI-ready evaluation runner.")
+    p.add_argument("--smoke", action="store_true", help="Run only the first N test cases (CI fast path).")
+    p.add_argument("--smoke-size", type=int, default=int(os.getenv("EVAL_SMOKE_SIZE", "3")))
+    return p.parse_args()
 
 
 if __name__ == "__main__":
-    exit_code = run_evaluation()
-    sys.exit(exit_code)
+    args = _parse_args()
+    smoke = args.smoke or os.getenv("EVAL_SMOKE") == "1"
+    sys.exit(run_evaluation(smoke=smoke, smoke_size=args.smoke_size))

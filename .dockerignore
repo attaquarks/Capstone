@@ -1,59 +1,68 @@
-# Lab 9: Environment Security - .dockerignore
-# Prevents sensitive or unnecessary files from being baked into the Docker image
+# .dockerignore — keeps the build context lean and the runtime image
+# secret-free. Only files that are NOT needed at runtime should be excluded.
 
-# Virtual environment
-venv/
-.venv/
-env/
-
-# Environment files (contain API keys)
+# --- Secrets (must NEVER end up in the image) ---
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
 
-# Git files
-.git
-.gitignore
+# --- Local databases & artefacts (state belongs in volumes, not images) ---
+checkpoint_db.sqlite
+checkpoints/
+feedback_log.db
+chroma_db/
+*.db
+*.sqlite
 
-# Python cache
+# --- Python build caches & virtualenvs ---
 __pycache__/
 *.py[cod]
 *$py.class
 *.pyo
+.venv/
+venv/
+env/
+.eggs/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Database files (local development only)
-*.db
-*.sqlite
-checkpoint_db.sqlite
-feedback_log.db
-chroma_db/
+# --- Version control ---
+.git/
+.gitignore
+.github/
 
-# IDE files
+# --- IDE / OS noise ---
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS files
 .DS_Store
 Thumbs.db
 
-# Documentation (not needed in container)
+# --- Build / log artefacts ---
+docker_build.log
+build/
+dist/
+node_modules/
+
+# --- Documentation that doesn't need to ship ---
 *.md
-*.txt
-!requirements.txt
+!README.md
+PLAN.md
+REPORT.md
 
-# Test and evaluation files
-test_dataset.json
-evaluation_report.md
-
-# Docker files
+# --- The Dockerfile + compose are not needed inside the image itself ---
 Dockerfile
 docker-compose.yaml
+docker-compose.override.yaml
 .dockerignore
 
-# Build logs
-docker_build.log
-
-# GitHub Actions
-.github/
+# IMPORTANT: Initial_Data/ (CSV + product specs) is intentionally NOT excluded
+# — the agent reads those files at runtime via tools.py. Likewise,
+# eval_thresholds.json and test_dataset.json are kept so containerised runs
+# can self-evaluate.

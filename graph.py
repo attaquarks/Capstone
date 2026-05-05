@@ -13,12 +13,12 @@ import os
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
+from llm_factory import build_llm
 from tools import ALL_TOOLS
 
 load_dotenv()
@@ -57,14 +57,13 @@ Guidelines:
 # --- LLM Setup ---
 
 def get_llm():
-    """Initialize the Google Gemini LLM with tool binding."""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.1,
-        convert_system_message_to_human=True,
-    )
-    return llm.bind_tools(ALL_TOOLS)
+    """Initialize the agent's chat model with tool binding.
+
+    Provider selection (Google Gemini vs. Groq Llama / Mixtral) is delegated
+    to ``llm_factory.build_llm``, which honours the ``LLM_PROVIDER`` env var
+    and falls back to the available API key. Both backends expose the same
+    LangChain chat-model interface, so downstream code does not change."""
+    return build_llm(role="agent", temperature=0.1).bind_tools(ALL_TOOLS)
 
 
 # --- Node Functions ---

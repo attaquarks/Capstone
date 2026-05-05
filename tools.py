@@ -24,6 +24,21 @@ CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 COLLECTION_NAME = "supply_chain_knowledge"
 
 
+# --- Chroma client factory ---
+def get_chroma_client():
+    """Return a ChromaDB client.
+
+    When `CHROMA_HOST` is set we connect to a remote ChromaDB service over
+    HTTP (the multi-service Docker Compose deployment). Otherwise we fall
+    back to a local PersistentClient on disk for plain local development.
+    """
+    chroma_host = os.getenv("CHROMA_HOST")
+    if chroma_host:
+        chroma_port = int(os.getenv("CHROMA_PORT", "8000"))
+        return chromadb.HttpClient(host=chroma_host, port=chroma_port)
+    return chromadb.PersistentClient(path=CHROMA_DIR)
+
+
 # --- Helper: Load CSV data ---
 def _load_csv(filename: str) -> list[dict]:
     """Load a CSV file from the Initial_Data directory."""
@@ -68,6 +83,26 @@ class ProductSpecsInput(BaseModel):
 
 # --- Tool Definitions ---
 
+def _token_overlap(query: str, candidate: str) -> int:
+    """Count meaningful overlapping tokens between a query and candidate.
+
+    Normalises plural/singular ("pumps" vs "pump"), case, and punctuation so
+    queries phrased in natural language ("Hydraulic Pumps HP-300") still match
+    canonical product names ("Hydraulic Pump HP-300"). Used as a fallback when
+    plain substring matching fails.
+    """
+    import re
+
+    def _tokens(s: str) -> set:
+        toks = re.findall(r"[A-Za-z0-9]+", s.lower())
+        # Drop trailing 's' on alphabetic tokens (very simple plural fold).
+        return {t[:-1] if (t.endswith("s") and t.isalpha() and len(t) > 3) else t for t in toks}
+
+    q = _tokens(query)
+    c = _tokens(candidate)
+    return len(q & c)
+
+
 @tool(args_schema=InventoryQueryInput)
 def query_inventory(product_id: Optional[str] = None, product_name: Optional[str] = None) -> str:
     """Query current inventory stock levels for products. Returns product details
@@ -77,7 +112,7 @@ def query_inventory(product_id: Optional[str] = None, product_name: Optional[str
     if not rows:
         return "Error: Inventory data not available."
 
-    results = []
+    results: list[dict] = []
     for row in rows:
         if product_id and row.get("product_id", "").upper() == product_id.upper():
             results.append(row)
@@ -85,6 +120,18 @@ def query_inventory(product_id: Optional[str] = None, product_name: Optional[str
             results.append(row)
         elif not product_id and not product_name:
             results.append(row)
+
+    # Fallback: if a name-based search returned nothing, try a token-overlap
+    # match. Picks up plural/singular variants ("Pumps" vs "Pump") and queries
+    # that quote the model number ("HP-300") without the full product name.
+    if not results and product_name:
+        scored = [
+            (_token_overlap(product_name, row.get("product_name", "")), row)
+            for row in rows
+        ]
+        scored = [pair for pair in scored if pair[0] >= 2]
+        scored.sort(key=lambda x: -x[0])
+        results = [row for _, row in scored[:5]]
 
     if not results:
         return f"No inventory records found for product_id='{product_id}' or product_name='{product_name}'."
@@ -175,7 +222,7 @@ def search_suppliers(query: str, country: Optional[str] = None) -> str:
     """Search the knowledge base for supplier information using semantic search.
     Can filter by country. Use this when the user asks about suppliers, pricing, or vendor options."""
     try:
-        client = chromadb.PersistentClient(path=CHROMA_DIR)
+        client = get_chroma_client()
         collection = client.get_collection(COLLECTION_NAME)
 
         where_filter = {"doc_type": "supplier"}
@@ -269,7 +316,7 @@ def get_product_specs(product_id: str) -> str:
     """Retrieve detailed technical specifications for a product from the knowledge base.
     Use this when the user needs technical details, dimensions, or application information."""
     try:
-        client = chromadb.PersistentClient(path=CHROMA_DIR)
+        client = get_chroma_client()
         collection = client.get_collection(COLLECTION_NAME)
 
         results = collection.query(
