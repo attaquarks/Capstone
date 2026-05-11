@@ -25,22 +25,20 @@ from langgraph.prebuilt import ToolNode
 from typing import Annotated, TypedDict
 from dotenv import load_dotenv
 
-from llm_factory import build_llm
-from schema import ChatRequest, ChatResponse, HealthResponse
-from tools import ALL_TOOLS
-from graph import SYSTEM_PROMPT
-from guardrails_config import check_guardrails, sanitize_output, SafetyVerdict
+from src.core.llm_factory import build_llm
+from src.api.schema import ChatRequest, ChatResponse, HealthResponse
+from src.core.tools import ALL_TOOLS
+from src.core.graph import SYSTEM_PROMPT
+from src.core.guardrails_config import check_guardrails, sanitize_output, SafetyVerdict
+from src.paths import CHECKPOINT_DB_PATH, ensure_runtime_dirs
 
 load_dotenv()
 
 # --- Global State ---
-# Honour CHECKPOINT_DB_PATH from the environment so the checkpoint SQLite DB
-# can live on a Docker volume (industrial deployment) without changing code.
-DB_PATH = os.getenv(
-    "CHECKPOINT_DB_PATH",
-    os.path.join(os.path.dirname(__file__), "checkpoint_db.sqlite"),
-)
-os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+# Use the centralised path helper. ``CHECKPOINT_DB_PATH`` env var still wins,
+# because the paths module reads it; here we just resolve to a concrete string.
+ensure_runtime_dirs()
+DB_PATH = str(CHECKPOINT_DB_PATH)
 checkpointer = None
 compiled_graph = None
 

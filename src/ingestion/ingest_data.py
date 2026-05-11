@@ -2,7 +2,7 @@
 Lab 2: Knowledge Engineering & Domain Grounding
 Ingestion script for Supply Chain Intelligence Agent.
 
-This script processes project-specific files (CSV, TXT, PDF) from the Initial_Data folder,
+This script processes project-specific files (CSV, TXT) from data/,
 cleans domain-specific noise, enriches chunks with metadata, applies semantic chunking,
 embeds them using Google Generative AI embeddings, and indexes them in ChromaDB.
 """
@@ -20,12 +20,13 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
 
+from src.paths import DATA_DIR, CHROMA_DIR, ensure_runtime_dirs
+
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DATA_DIR = os.path.join(os.path.dirname(__file__), "Initial_Data")
-CHROMA_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
 COLLECTION_NAME = "supply_chain_knowledge"
+ensure_runtime_dirs()
 
 
 def clean_text(text: str) -> str:
@@ -152,7 +153,7 @@ def parse_text_to_documents(filepath: str, doc_type: str) -> list[dict[str, Any]
 
 
 def ingest_all_data() -> list[dict[str, Any]]:
-    """Process all files in the Initial_Data directory."""
+    """Process all files in the data/ directory."""
     all_documents = []
 
     file_type_map = {
@@ -164,16 +165,16 @@ def ingest_all_data() -> list[dict[str, Any]]:
     }
 
     for filename, (file_type, doc_type) in file_type_map.items():
-        filepath = os.path.join(DATA_DIR, filename)
-        if not os.path.exists(filepath):
+        filepath = DATA_DIR / filename
+        if not filepath.exists():
             print(f"  [SKIP] {filename} not found")
             continue
 
         print(f"  [PROCESS] {filename} as {doc_type}...")
         if file_type == "csv":
-            docs = parse_csv_to_documents(filepath, doc_type)
+            docs = parse_csv_to_documents(str(filepath), doc_type)
         else:
-            docs = parse_text_to_documents(filepath, doc_type)
+            docs = parse_text_to_documents(str(filepath), doc_type)
 
         all_documents.extend(docs)
         print(f"    -> {len(docs)} chunks extracted")
@@ -197,7 +198,7 @@ def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
         client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
     else:
         print(f"  Using local PersistentClient at {CHROMA_DIR}")
-        client = chromadb.PersistentClient(path=CHROMA_DIR)
+        client = chromadb.PersistentClient(path=str(CHROMA_DIR))
 
     # Delete existing collection if it exists
     try:

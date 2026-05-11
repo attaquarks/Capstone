@@ -43,14 +43,16 @@ from typing import Any
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 
+from src.paths import PROJECT_ROOT, EVALUATION_DIR, TESTS_DIR, DOCS_DIR
+
 load_dotenv()
 
 # --- Configuration ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATASET_PATH = os.getenv("TEST_DATASET_PATH", os.path.join(BASE_DIR, "test_dataset.json"))
+# Eval inputs live under tests/ and evaluation/, outputs land in evaluation/ by default.
+DATASET_PATH = os.getenv("TEST_DATASET_PATH", str(TESTS_DIR / "test_dataset.json"))
 THRESHOLD_PATH = os.getenv("EVAL_THRESHOLD_PATH")
-REPORT_PATH = os.getenv("EVAL_REPORT_PATH", os.path.join(BASE_DIR, "evaluation_report.md"))
-RESULTS_JSON_PATH = os.getenv("EVAL_RESULTS_PATH", os.path.join(BASE_DIR, "eval_results.json"))
+REPORT_PATH = os.getenv("EVAL_REPORT_PATH", str(EVALUATION_DIR / "evaluation_report.md"))
+RESULTS_JSON_PATH = os.getenv("EVAL_RESULTS_PATH", str(EVALUATION_DIR / "eval_results.json"))
 
 
 # ---------------------------------------------------------------------------
@@ -81,10 +83,10 @@ def resolve_threshold_path() -> str:
     falls back to the legacy `eval_threshold_config.json`."""
     if THRESHOLD_PATH and os.path.exists(THRESHOLD_PATH):
         return THRESHOLD_PATH
-    canonical = os.path.join(BASE_DIR, "eval_thresholds.json")
+    canonical = str(EVALUATION_DIR / "eval_thresholds.json")
     if os.path.exists(canonical):
         return canonical
-    legacy = os.path.join(BASE_DIR, "eval_threshold_config.json")
+    legacy = str(EVALUATION_DIR / "eval_threshold_config.json")
     if os.path.exists(legacy):
         return legacy
     return canonical  # may not exist; load_thresholds() handles defaults
@@ -143,7 +145,7 @@ def _make_judge_llm(api_key: str):
     is set the judge runs on Groq; otherwise it runs on Google Gemini. The
     ``api_key`` argument is preserved for back-compat (Gemini path) but is
     ignored when Groq is selected — Groq picks up ``GROQ_API_KEY`` directly."""
-    from llm_factory import build_llm, resolve_provider
+    from src.core.llm_factory import build_llm, resolve_provider
 
     if resolve_provider() == "groq":
         return build_llm(role="judge", temperature=0.0)
@@ -246,7 +248,7 @@ def run_evaluation(smoke: bool = False, smoke_size: int = 3) -> int:
 
     # Surface the active provider/model selection so CI logs make it obvious
     # which backend produced these scores.
-    from llm_factory import describe_provider
+    from src.core.llm_factory import describe_provider
     print(f"LLM backend: {describe_provider()}")
 
     dataset = load_test_dataset()
@@ -266,7 +268,7 @@ def run_evaluation(smoke: bool = False, smoke_size: int = 3) -> int:
     else:
         judge_llm = _make_judge_llm(api_key)
         try:
-            from graph import build_graph
+            from src.core.graph import build_graph
 
             graph = build_graph()
         except Exception as e:

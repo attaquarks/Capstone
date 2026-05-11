@@ -6,8 +6,8 @@ import os
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GRAPH_PATH = os.path.join(REPO_ROOT, "graph.py")
-BACKUP_PATH = os.path.join(REPO_ROOT, "graph.py.bak")
+GRAPH_PATH = os.path.join(REPO_ROOT, "src", "core", "graph.py")
+BACKUP_PATH = os.path.join(REPO_ROOT, "src", "core", "graph.py.bak")
 
 
 def main() -> int:
@@ -22,7 +22,7 @@ def main() -> int:
         f.write(original)
 
     os.remove(BACKUP_PATH)
-    print("Agent restored from backup. Run `python run_eval.py` to confirm the gate passes again.")
+    print("Agent restored from backup. Run `python -m evaluation.run_eval` to confirm the gate passes again.")
     return 0
 
 

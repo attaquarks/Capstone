@@ -17,9 +17,9 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
-from tools import ALL_TOOLS
-from graph import SYSTEM_PROMPT
-from guardrails_config import (
+from src.core.tools import ALL_TOOLS
+from src.core.graph import SYSTEM_PROMPT
+from src.core.guardrails_config import (
     check_guardrails,
     sanitize_output,
     SafetyVerdict,

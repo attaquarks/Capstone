@@ -15,12 +15,10 @@ from pydantic import BaseModel, Field
 import chromadb
 from dotenv import load_dotenv
 
+from src.paths import DATA_DIR, CHROMA_DIR
+
 load_dotenv()
 
-# --- Data paths ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "Initial_Data")
-CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 COLLECTION_NAME = "supply_chain_knowledge"
 
 
@@ -36,14 +34,14 @@ def get_chroma_client():
     if chroma_host:
         chroma_port = int(os.getenv("CHROMA_PORT", "8000"))
         return chromadb.HttpClient(host=chroma_host, port=chroma_port)
-    return chromadb.PersistentClient(path=CHROMA_DIR)
+    return chromadb.PersistentClient(path=str(CHROMA_DIR))
 
 
 # --- Helper: Load CSV data ---
 def _load_csv(filename: str) -> list[dict]:
-    """Load a CSV file from the Initial_Data directory."""
-    filepath = os.path.join(DATA_DIR, filename)
-    if not os.path.exists(filepath):
+    """Load a CSV file from the seed-data directory (data/)."""
+    filepath = DATA_DIR / filename
+    if not filepath.exists():
         return []
     with open(filepath, "r", encoding="utf-8") as f:
         return list(csv.DictReader(f))

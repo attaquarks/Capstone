@@ -1,6 +1,9 @@
 # docker-compose.yaml — multi-service orchestration for the
 # Supply Chain Intelligence Agent.
 #
+# Run from the repository root:
+#   docker compose -f docker/docker-compose.yaml up -d --build
+#
 # Services:
 #   chromadb       — vector database (the "backing data store").
 #   agent-ingest   — one-shot job that seeds the vector index on first run.
@@ -8,15 +11,14 @@
 #
 # Persistence:
 #   chroma-data       — vector index (survives `docker compose down`).
-#   checkpoint-data   — the agent's SQLite checkpoint DB.
+#   checkpoint-data   — the agent's SQLite checkpoint DB + feedback log.
 #
 # Secrets:
 #   No secrets are baked into any image. They are injected at *runtime* via
-#   `env_file: .env` (host file, not in the image — see .dockerignore) plus
+#   `env_file: ../.env` (host file, not in the image — see .dockerignore) plus
 #   explicit `${VAR}` substitution from the host shell. Run with e.g.
-#       GEMINI_API_KEY=... docker compose up -d
-#   or place GEMINI_API_KEY=... in a local .env file alongside this compose
-#   file. The .env file is excluded from the image by .dockerignore.
+#       GEMINI_API_KEY=... docker compose -f docker/docker-compose.yaml up -d
+#   or place GEMINI_API_KEY=... in a local .env file at the repo root.
 
 services:
   # ------------------------------------------------------------------
@@ -54,20 +56,20 @@ services:
 
   # ------------------------------------------------------------------
   # One-shot ingestion job: populates the vector DB on first start. Idempotent
-  # — re-running just rebuilds the collection from Initial_Data/.
+  # — re-running just rebuilds the collection from data/.
   # ------------------------------------------------------------------
   agent-ingest:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     image: capstone-agent:latest
     container_name: supply-chain-agent-ingest
     depends_on:
       chromadb:
         condition: service_healthy
     environment:
-      # The factory in llm_factory.py picks Groq if GROQ_API_KEY is set, else
-      # falls back to Gemini. Empty values are passed through harmlessly.
+      # The factory in src/core/llm_factory.py picks Groq if GROQ_API_KEY is set,
+      # else falls back to Gemini. Empty values are passed through harmlessly.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       LLM_PROVIDER: ${LLM_PROVIDER:-}
@@ -76,13 +78,13 @@ services:
       CHROMA_PORT: "8000"
       PYTHONPATH: /app
     env_file:
-      - path: .env
+      - path: ../.env
         required: false
     networks:
       - agent-network
     # Override entrypoint to run ingestion once and exit.
-    entrypoint: ["/usr/bin/tini", "--", "/app/entrypoint.sh"]
-    command: ["python", "ingest_data.py"]
+    entrypoint: ["/usr/bin/tini", "--", "/app/docker/entrypoint.sh"]
+    command: ["python", "-m", "src.ingestion.ingest_data"]
     restart: "no"
 
   # ------------------------------------------------------------------
@@ -90,8 +92,8 @@ services:
   # ------------------------------------------------------------------
   agent-api:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     image: capstone-agent:latest
     container_name: supply-chain-agent
     ports:
@@ -103,13 +105,13 @@ services:
       AGENT_MODEL: ${AGENT_MODEL:-}
       CHROMA_HOST: chromadb
       CHROMA_PORT: "8000"
-      CHECKPOINT_DB_PATH: /app/checkpoints/checkpoint_db.sqlite
+      CHECKPOINT_DB_PATH: /app/runtime/checkpoint_db.sqlite
       PYTHONPATH: /app
     env_file:
-      - path: .env
+      - path: ../.env
         required: false
     volumes:
-      - checkpoint-data:/app/checkpoints
+      - checkpoint-data:/app/runtime
     depends_on:
       chromadb:
         condition: service_healthy

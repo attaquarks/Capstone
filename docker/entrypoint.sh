@@ -28,10 +28,12 @@ if [ -n "${CHROMA_HOST}" ]; then
     echo "[entrypoint] ChromaDB is reachable."
 fi
 
-# Ensure the checkpoint directory exists (volumes are mounted empty on first
-# run; the Dockerfile mkdir won't survive a fresh anonymous volume mount).
+# Ensure the runtime directory (checkpoint DB, feedback DB, JSON mirror, local
+# ChromaDB) exists even when a fresh anonymous volume is mounted over /app/runtime
+# on first run.
 if [ -n "${CHECKPOINT_DB_PATH}" ]; then
     mkdir -p "$(dirname "${CHECKPOINT_DB_PATH}")"
 fi
+mkdir -p /app/runtime/chroma_db
 
 exec "$@"

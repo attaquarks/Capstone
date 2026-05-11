@@ -10,9 +10,11 @@
 secrets/
 
 # --- Local databases & artefacts (state belongs in volumes, not images) ---
+runtime/
 checkpoint_db.sqlite
 checkpoints/
 feedback_log.db
+feedback_log.json
 chroma_db/
 *.db
 *.sqlite
@@ -51,18 +53,16 @@ dist/
 node_modules/
 
 # --- Documentation that doesn't need to ship ---
+docs/
 *.md
 !README.md
-PLAN.md
-REPORT.md
 
-# --- The Dockerfile + compose are not needed inside the image itself ---
-Dockerfile
-docker-compose.yaml
+# --- The Docker artefacts themselves are not needed *inside* the image ---
+# (the build process needs them but they are stripped after COPY).
 docker-compose.override.yaml
 .dockerignore
 
-# IMPORTANT: Initial_Data/ (CSV + product specs) is intentionally NOT excluded
-# — the agent reads those files at runtime via tools.py. Likewise,
-# eval_thresholds.json and test_dataset.json are kept so containerised runs
-# can self-evaluate.
+# IMPORTANT: data/ (CSV + product specs) is intentionally NOT excluded
+# — the agent reads those files at runtime via src/core/tools.py. Likewise,
+# evaluation/eval_thresholds.json and tests/test_dataset.json are kept so
+# containerised runs can self-evaluate.

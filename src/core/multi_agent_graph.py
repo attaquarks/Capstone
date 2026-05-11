@@ -16,14 +16,14 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
-from tools import (
+from src.core.tools import (
     query_inventory,
     calculate_risk_score,
     search_suppliers,
     get_product_specs,
     generate_procurement_email,
 )
-from agents_config import AGENT_PERSONAS
+from src.core.agents_config import AGENT_PERSONAS
 
 load_dotenv()
 

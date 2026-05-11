@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "supply-chain-agent"
+version = "1.1.0"
+description = "Industrial-grade Agentic AI System for supply chain managers (Capstone Labs 1-12)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Supply Chain Capstone Team" }
+]
+keywords = ["langgraph", "agent", "supply-chain", "rag", "fastapi", "chromadb"]
+dynamic = ["dependencies"]
+
+[project.urls]
+Documentation = "./docs/VIVA_GUIDE.md"
+Source = "https://github.com/attaquarks/Capstone"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "evaluation*", "scripts*", "tests*"]
+exclude = ["docs*", "data*", "docker*", "runtime*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }

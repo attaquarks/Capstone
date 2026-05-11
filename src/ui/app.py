@@ -25,10 +25,14 @@ from langgraph.prebuilt import ToolNode
 from typing import Annotated, TypedDict
 from dotenv import load_dotenv
 
+from src.paths import FEEDBACK_DB_PATH, FEEDBACK_JSON_PATH, ensure_runtime_dirs
+
 load_dotenv()
+ensure_runtime_dirs()
 
 # --- Configuration ---
-DB_PATH = os.path.join(os.path.dirname(__file__), "feedback_log.db")
+DB_PATH = str(FEEDBACK_DB_PATH)
+JSON_PATH = str(FEEDBACK_JSON_PATH)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 
@@ -58,12 +62,12 @@ def init_feedback_db():
 def log_interaction(thread_id: str, message_id: str, user_input: str,
                     agent_response: str, feedback_score: int = 0,
                     optional_comment: str = "", category: str = "general"):
-    """Log an interaction with feedback to the database."""
+    """Log an interaction with feedback to the database and mirror JSON."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO feedback_log 
-        (timestamp, thread_id, message_id, user_input, agent_response, 
+        INSERT INTO feedback_log
+        (timestamp, thread_id, message_id, user_input, agent_response,
          feedback_score, optional_comment, category)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
@@ -78,19 +82,63 @@ def log_interaction(thread_id: str, message_id: str, user_input: str,
     ))
     conn.commit()
     conn.close()
+    # Keep the Lab 12 JSON mirror in sync on every new interaction.
+    export_feedback_json()
 
 
 def update_feedback(message_id: str, feedback_score: int, optional_comment: str = ""):
-    """Update feedback for a specific message."""
+    """Update feedback for a specific message and mirror to feedback_log.json."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        UPDATE feedback_log 
+        UPDATE feedback_log
         SET feedback_score = ?, optional_comment = ?
         WHERE message_id = ?
     """, (feedback_score, optional_comment, message_id))
     conn.commit()
     conn.close()
+    # Keep the Lab 12 JSON mirror in sync on every score change.
+    export_feedback_json()
+
+
+def export_feedback_json():
+    """Export the SQLite feedback log to ``runtime/feedback_log.json``.
+
+    Lab 12 requires a JSON deliverable. We keep SQLite as the primary
+    store (transactional, queryable) and dump a one-shot JSON snapshot
+    after every feedback update. The file mirrors the DB schema and
+    additionally includes a Lab-12-style ``feedback`` field
+    ('good' / 'bad' / 'unrated') derived from ``feedback_score``.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, timestamp, thread_id, message_id, user_input, agent_response,
+               feedback_score, optional_comment, category
+        FROM feedback_log
+        ORDER BY id ASC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    score_to_label = {1: "good", -1: "bad", 0: "unrated"}
+    payload = [
+        {
+            "id": r[0],
+            "timestamp": r[1],
+            "thread_id": r[2],
+            "message_id": r[3],
+            "user_input": r[4],
+            "agent_response": r[5],
+            "feedback": score_to_label.get(r[6], "unrated"),
+            "feedback_score": r[6],
+            "optional_comment": r[7],
+            "category": r[8],
+        }
+        for r in rows
+    ]
+    with open(JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
 
 
 def get_feedback_stats():
@@ -118,8 +166,8 @@ class AgentState(TypedDict):
 def get_agent_response(user_message: str) -> str:
     """Get a response from the agent."""
     try:
-        from tools import ALL_TOOLS
-        from graph import SYSTEM_PROMPT
+        from src.core.tools import ALL_TOOLS
+        from src.core.graph import SYSTEM_PROMPT
 
         llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
@@ -223,25 +271,25 @@ def main():
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-            # Feedback buttons for assistant messages
+            # Feedback buttons for assistant messages (Lab 12: Good / Bad).
             if msg["role"] == "assistant":
                 msg_id = msg.get("message_id", f"msg-{i}")
                 if msg_id not in st.session_state.feedback_given:
                     col1, col2, col3 = st.columns([1, 1, 8])
                     with col1:
-                        if st.button("👍", key=f"up_{msg_id}"):
+                        if st.button("Good 👍", key=f"up_{msg_id}"):
                             update_feedback(msg_id, 1)
                             st.session_state.feedback_given[msg_id] = 1
                             st.rerun()
                     with col2:
-                        if st.button("👎", key=f"down_{msg_id}"):
+                        if st.button("Bad 👎", key=f"down_{msg_id}"):
                             st.session_state.feedback_given[msg_id] = -1
                             st.rerun()
 
-                    # If thumbs down, show comment box
+                    # If marked "Bad", show comment box for the Lab-11 drift clustering.
                     if st.session_state.feedback_given.get(msg_id) == -1:
                         comment = st.text_input(
-                            "What went wrong?",
+                            "What went wrong? (optional)",
                             key=f"comment_{msg_id}",
                         )
                         if st.button("Submit Feedback", key=f"submit_{msg_id}"):
@@ -249,7 +297,7 @@ def main():
                             st.success("Feedback recorded. Thank you!")
                 else:
                     score = st.session_state.feedback_given[msg_id]
-                    st.caption(f"{'👍 Helpful' if score == 1 else '👎 Needs improvement'}")
+                    st.caption(f"{'👍 Good' if score == 1 else '👎 Bad'}")
 
     # Handle pending query from sidebar
     if "pending_query" in st.session_state:

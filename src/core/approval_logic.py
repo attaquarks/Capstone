@@ -19,7 +19,8 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
-from tools import ALL_TOOLS, generate_procurement_email
+from src.core.tools import ALL_TOOLS, generate_procurement_email
+from src.paths import CHECKPOINT_DB_PATH, ensure_runtime_dirs
 
 import langgraph.checkpoint.sqlite.aio as sqlite_aio
 import json
@@ -30,8 +31,9 @@ def _patched_dumps(obj, *args, **kwargs):
 sqlite_aio.json.dumps = _patched_dumps
 
 load_dotenv()
+ensure_runtime_dirs()
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "checkpoint_db.sqlite")
+DB_PATH = str(CHECKPOINT_DB_PATH)
 
 
 class HITLState(TypedDict):

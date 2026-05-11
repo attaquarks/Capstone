@@ -8,8 +8,20 @@
 # Stage 2 (runtime): a clean slim image that copies only /opt/venv and the
 # application source. No compilers, no caches, runs as a non-root user.
 #
-# Layer ordering is optimised so that source-only changes do NOT bust the
-# expensive `pip install` cache layer.
+# Build context is the REPO ROOT (compose passes `context: ..` because this
+# file lives in docker/). Source layout inside the image mirrors the repo:
+#
+#   /app/
+#     src/        — Python package (core, api, ingestion, ui, feedback, paths.py)
+#     data/       — initial CSVs & PDFs
+#     evaluation/ — eval pipeline + thresholds
+#     tests/      — test dataset
+#     scripts/    — CI helpers
+#     docker/     — Dockerfile + entrypoint.sh
+#     runtime/    — writable: checkpoint DB, feedback DB, ChromaDB (volume-mounted)
+#
+# Layer ordering is optimised so source-only changes do NOT bust the expensive
+# `pip install` cache layer.
 
 ARG PYTHON_VERSION=3.11
 ARG DEBIAN_RELEASE=bookworm
@@ -48,7 +60,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:${PATH}" \
     APP_HOME=/app \
-    CHECKPOINT_DB_PATH=/app/checkpoints/checkpoint_db.sqlite
+    PYTHONPATH=/app \
+    CHECKPOINT_DB_PATH=/app/runtime/checkpoint_db.sqlite
 
 # Minimal runtime-only system packages: curl for the healthcheck, tini for
 # correct PID-1 signal handling.
@@ -68,15 +81,15 @@ WORKDIR ${APP_HOME}
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy the application source. Owned by appuser so the non-root user can read
-# (and, for /app/checkpoints, write).
+# (and, for /app/runtime/, write).
 COPY --chown=appuser:appuser . ${APP_HOME}
 
 # Pre-create writable directories for the checkpoint DB and any local caches.
-RUN mkdir -p ${APP_HOME}/checkpoints ${APP_HOME}/chroma_db \
-    && chown -R appuser:appuser ${APP_HOME}/checkpoints ${APP_HOME}/chroma_db
+RUN mkdir -p ${APP_HOME}/runtime ${APP_HOME}/runtime/chroma_db \
+    && chown -R appuser:appuser ${APP_HOME}/runtime
 
 # Make the entrypoint executable.
-RUN chmod +x ${APP_HOME}/entrypoint.sh
+RUN chmod +x ${APP_HOME}/docker/entrypoint.sh
 
 USER appuser
 
@@ -88,5 +101,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl --silent --fail http://localhost:8000/health || exit 1
 
 # tini handles signal forwarding so `docker stop` cleanly shuts down uvicorn.
-ENTRYPOINT ["/usr/bin/tini", "--", "/app/entrypoint.sh"]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/docker/entrypoint.sh"]
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

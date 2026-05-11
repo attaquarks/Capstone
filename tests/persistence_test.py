@@ -19,8 +19,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import Annotated, TypedDict
 from dotenv import load_dotenv
 
-from tools import ALL_TOOLS
-from graph import SYSTEM_PROMPT
+from src.core.tools import ALL_TOOLS
+from src.core.graph import SYSTEM_PROMPT
+from src.paths import CHECKPOINT_DB_PATH, ensure_runtime_dirs
 
 import langgraph.checkpoint.sqlite.aio as sqlite_aio
 import json
@@ -31,8 +32,9 @@ def _patched_dumps(obj, *args, **kwargs):
 sqlite_aio.json.dumps = _patched_dumps
 
 load_dotenv(override=True)
+ensure_runtime_dirs()
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "checkpoint_db.sqlite")
+DB_PATH = str(CHECKPOINT_DB_PATH)
 
 
 class AgentState(TypedDict):

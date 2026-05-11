@@ -18,10 +18,12 @@ from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 
+from src.paths import FEEDBACK_DB_PATH, DOCS_DIR
+
 load_dotenv()
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "feedback_log.db")
-REPORT_PATH = os.path.join(os.path.dirname(__file__), "drift_report.md")
+DB_PATH = str(FEEDBACK_DB_PATH)
+REPORT_PATH = str(DOCS_DIR / "drift_report.md")
 
 
 def get_negative_feedback() -> list[dict]:

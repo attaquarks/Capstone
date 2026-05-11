@@ -18,8 +18,8 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
-from llm_factory import build_llm
-from tools import ALL_TOOLS
+from src.core.llm_factory import build_llm
+from src.core.tools import ALL_TOOLS
 
 load_dotenv()
 
