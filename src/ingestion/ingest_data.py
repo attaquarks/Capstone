@@ -182,13 +182,42 @@ def ingest_all_data() -> list[dict[str, Any]]:
     return all_documents
 
 
+def _build_embedding_function():
+    """Pick an embedding function based on which API key is available.
+
+    * If a Google API key is set → use Google's gemini-embedding-001
+      (768-dim, hosted, no extra download).
+    * Otherwise → use ChromaDB's built-in default embedding function
+      (sentence-transformers/all-MiniLM-L6-v2 via ONNX, 384-dim).
+      Downloaded once on first use, fully local thereafter — no key needed.
+
+    Returns a tuple ``(embedding_fn, source_name)``. ``embedding_fn`` is
+    None when we want ChromaDB to handle it implicitly via the collection's
+    own ``embedding_function``.
+    """
+    if GEMINI_API_KEY:
+        print("[EMBEDDING] Using Google Generative AI embeddings (gemini-embedding-001).")
+        return GoogleGenerativeAIEmbeddings(
+            model="gemini-embedding-001",
+            google_api_key=GEMINI_API_KEY,
+        ), "google"
+
+    # Local fallback — no API key required. Imported lazily so we don't
+    # touch onnxruntime unless we actually need it.
+    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+    print("[EMBEDDING] No GEMINI_API_KEY found — using ChromaDB's local "
+          "DefaultEmbeddingFunction (sentence-transformers/all-MiniLM-L6-v2).")
+    return DefaultEmbeddingFunction(), "chromadb-default"
+
+
 def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
-    """Embed documents using Google Generative AI and index in ChromaDB."""
-    print("\n[EMBEDDING] Initializing Google Generative AI embeddings...")
-    embeddings_model = GoogleGenerativeAIEmbeddings(
-        model="gemini-embedding-001",
-        google_api_key=GEMINI_API_KEY,
-    )
+    """Embed documents and index them in ChromaDB.
+
+    Provider selection is delegated to ``_build_embedding_function`` so the
+    pipeline works both with and without a Gemini API key (the Groq path
+    has no first-party embedding model)."""
+    embeddings_model, embed_source = _build_embedding_function()
 
     print("[INDEXING] Setting up ChromaDB...")
     chroma_host = os.getenv("CHROMA_HOST")
@@ -200,20 +229,27 @@ def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
         print(f"  Using local PersistentClient at {CHROMA_DIR}")
         client = chromadb.PersistentClient(path=str(CHROMA_DIR))
 
-    # Delete existing collection if it exists
+    # Delete existing collection if it exists.
     try:
         client.delete_collection(COLLECTION_NAME)
     except Exception:
         pass
 
-    collection = client.create_collection(
-        name=COLLECTION_NAME,
-        metadata={"description": "Supply Chain Intelligence Knowledge Base"},
-    )
+    # When using ChromaDB's DefaultEmbeddingFunction, register it on the
+    # collection so .query(query_texts=...) calls don't have to embed manually.
+    if embed_source == "chromadb-default":
+        collection = client.create_collection(
+            name=COLLECTION_NAME,
+            metadata={"description": "Supply Chain Intelligence Knowledge Base"},
+            embedding_function=embeddings_model,
+        )
+    else:
+        collection = client.create_collection(
+            name=COLLECTION_NAME,
+            metadata={"description": "Supply Chain Intelligence Knowledge Base"},
+        )
 
-    EMBED_DIM = 768  # embedding-001 outputs 768-dimensional vectors
-
-    # Process in batches to respect API limits
+    # Process in batches to respect API limits.
     batch_size = 20
     for i in range(0, len(documents), batch_size):
         batch = list(documents)[i : i + batch_size]
@@ -221,22 +257,32 @@ def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
         metadatas = [doc["metadata"] for doc in batch]
         ids = [str(uuid.uuid4()) for _ in batch]
 
-        print(f"  [BATCH] Embedding documents {i+1}-{i+len(batch)} of {len(documents)}...")
-        try:
-            vectors = embeddings_model.embed_documents(texts)
+        print(f"  [BATCH] Indexing documents {i+1}-{i+len(batch)} of {len(documents)}...")
+        if embed_source == "google":
+            try:
+                vectors = embeddings_model.embed_documents(texts)
+                collection.add(
+                    documents=texts,
+                    embeddings=vectors,
+                    metadatas=metadatas,
+                    ids=ids,
+                )
+            except Exception as e:
+                # Last-resort fallback: zero vectors keep dimensions consistent
+                # so semantic search degrades gracefully but metadata filtering
+                # still works.
+                print(f"  [ERROR] Failed to embed batch: {e}")
+                fallback_vectors = [[0.0] * 768 for _ in texts]
+                collection.add(
+                    documents=texts,
+                    embeddings=fallback_vectors,
+                    metadatas=metadatas,
+                    ids=ids,
+                )
+        else:
+            # ChromaDB will embed via the collection's registered embedding_function.
             collection.add(
                 documents=texts,
-                embeddings=vectors,
-                metadatas=metadatas,
-                ids=ids,
-            )
-        except Exception as e:
-            print(f"  [ERROR] Failed to embed batch: {e}")
-            # Fallback: zero-vectors preserve correct dimension so ChromaDB stays consistent
-            fallback_vectors = [[0.0] * EMBED_DIM for _ in texts]
-            collection.add(
-                documents=texts,
-                embeddings=fallback_vectors,
                 metadatas=metadatas,
                 ids=ids,
             )
@@ -246,51 +292,38 @@ def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
 
 
 def test_retrieval(collection: chromadb.Collection):
-    """Run test queries to verify the knowledge base."""
+    """Run test queries to verify the knowledge base.
+
+    Uses ``query_texts`` rather than pre-computed ``query_embeddings`` so the
+    collection's registered embedding function handles encoding — works for
+    both the Gemini and the local sentence-transformers backends without a
+    code branch."""
     print("\n" + "=" * 60)
     print("RETRIEVAL TESTS")
     print("=" * 60)
 
-    embeddings_model = GoogleGenerativeAIEmbeddings(
-        model="gemini-embedding-001",
-        google_api_key=GEMINI_API_KEY,
-    )
-
-    def embed_query(text: str) -> list:
+    def _run(label: str, query: str, **kwargs):
+        print(f"\n--- {label} ---")
         try:
-            return embeddings_model.embed_query(text)
+            results = collection.query(query_texts=[query], n_results=3, **kwargs)
         except Exception as e:
-            print(f"  [WARN] Could not embed query: {e}")
-            return [0.0] * 768
+            print(f"  [WARN] Query failed: {e}")
+            return
+        docs = results["documents"][0] if results["documents"] else []
+        metas = results["metadatas"][0] if results["metadatas"] else []
+        for doc, meta in zip(docs, metas):
+            tag = meta.get("doc_type", "?")
+            prio = meta.get("priority_level", "?")
+            print(f"  [{tag} | {prio}] {doc[:100]}...")
 
-    # Test 1: General query
-    print("\n--- Test 1: General inventory query ---")
-    results = collection.query(
-        query_embeddings=[embed_query("What is the current stock level of hydraulic pumps?")],
-        n_results=3,
-    )
-    for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-        print(f"  [{meta.get('doc_type')}] {doc[:100]}...")
-
-    # Test 2: Metadata filtering - only supplier documents
-    print("\n--- Test 2: Metadata filtering (supplier docs only) ---")
-    results = collection.query(
-        query_embeddings=[embed_query("Which supplier has the best reliability score?")],
-        n_results=3,
-        where={"doc_type": "supplier"},
-    )
-    for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-        print(f"  [{meta.get('doc_type')} | {meta.get('priority_level')}] {doc[:100]}...")
-
-    # Test 3: Priority-based filtering
-    print("\n--- Test 3: Critical priority items ---")
-    results = collection.query(
-        query_embeddings=[embed_query("Items that need immediate reorder")],
-        n_results=3,
-        where={"priority_level": "critical"},
-    )
-    for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-        print(f"  [{meta.get('doc_type')} | CRITICAL] {doc[:100]}...")
+    _run("Test 1: General inventory query",
+         "What is the current stock level of hydraulic pumps?")
+    _run("Test 2: Metadata filtering (supplier docs only)",
+         "Which supplier has the best reliability score?",
+         where={"doc_type": "supplier"})
+    _run("Test 3: Critical priority items",
+         "Items that need immediate reorder",
+         where={"priority_level": "critical"})
 
 
 if __name__ == "__main__":
