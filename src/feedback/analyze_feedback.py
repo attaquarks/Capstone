@@ -15,9 +15,9 @@ from datetime import datetime
 from collections import Counter
 
 from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 
+from src.core.llm_factory import build_llm
 from src.paths import FEEDBACK_DB_PATH, DOCS_DIR
 
 load_dotenv()
@@ -206,13 +206,8 @@ def run_analysis():
         generate_drift_report([], [], stats)
         return
 
-    # Initialize judge LLM
-    judge_llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.0,
-        convert_system_message_to_human=True,
-    )
+    # Initialize judge LLM (provider chosen by llm_factory — Gemini or Groq).
+    judge_llm = build_llm(role="judge", temperature=0.0)
 
     # Classify each failure
     print("\nClassifying failures...")

@@ -13,22 +13,16 @@ import asyncio
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
+from src.core.llm_factory import build_llm
 from src.core.tools import ALL_TOOLS, generate_procurement_email
 from src.paths import CHECKPOINT_DB_PATH, ensure_runtime_dirs
 
 import langgraph.checkpoint.sqlite.aio as sqlite_aio
-import json
-_original_dumps = sqlite_aio.json.dumps
-def _patched_dumps(obj, *args, **kwargs):
-    kwargs['default'] = lambda x: x.model_dump() if hasattr(x, "model_dump") else (x.dict() if hasattr(x, "dict") else str(x))
-    return _original_dumps(obj, *args, **kwargs)
-sqlite_aio.json.dumps = _patched_dumps
 
 load_dotenv()
 ensure_runtime_dirs()
@@ -44,13 +38,8 @@ class HITLState(TypedDict):
 
 
 def get_llm():
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.1,
-        convert_system_message_to_human=True,
-    )
-    return llm.bind_tools(ALL_TOOLS)
+    """Return the agent LLM via the pluggable factory (Gemini or Groq)."""
+    return build_llm(role="agent", temperature=0.1).bind_tools(ALL_TOOLS)
 
 
 HITL_SYSTEM_PROMPT = """You are a Supply Chain Intelligence Assistant with HITL safety controls.

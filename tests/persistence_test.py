@@ -15,21 +15,13 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
-from langchain_google_genai import ChatGoogleGenerativeAI
 from typing import Annotated, TypedDict
 from dotenv import load_dotenv
 
+from src.core.llm_factory import build_llm
 from src.core.tools import ALL_TOOLS
 from src.core.graph import SYSTEM_PROMPT
 from src.paths import CHECKPOINT_DB_PATH, ensure_runtime_dirs
-
-import langgraph.checkpoint.sqlite.aio as sqlite_aio
-import json
-_original_dumps = sqlite_aio.json.dumps
-def _patched_dumps(obj, *args, **kwargs):
-    kwargs['default'] = lambda x: x.model_dump() if hasattr(x, "model_dump") else (x.dict() if hasattr(x, "dict") else str(x))
-    return _original_dumps(obj, *args, **kwargs)
-sqlite_aio.json.dumps = _patched_dumps
 
 load_dotenv(override=True)
 ensure_runtime_dirs()
@@ -42,14 +34,8 @@ class AgentState(TypedDict):
 
 
 def get_llm():
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.1,
-        convert_system_message_to_human=True,
-        max_retries=0, # Fail fast on API quota limits
-    )
-    return llm.bind_tools(ALL_TOOLS)
+    """Return the agent LLM via the pluggable factory (Gemini or Groq)."""
+    return build_llm(role="agent", temperature=0.1).bind_tools(ALL_TOOLS)
 
 
 def agent_node(state: AgentState) -> dict:

@@ -10,12 +10,12 @@ import os
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
+from src.core.llm_factory import build_llm
 from src.core.tools import (
     query_inventory,
     calculate_risk_score,
@@ -46,13 +46,12 @@ ANALYST_TOOLS = [generate_procurement_email]
 # --- LLM Factory ---
 
 def get_agent_llm(agent_name: str):
-    """Create an LLM bound to the specific agent's tools."""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.1,
-        convert_system_message_to_human=True,
-    )
+    """Create an LLM bound to the specific agent's tools.
+
+    Provider (Gemini vs Groq) is chosen at runtime by ``llm_factory.build_llm``
+    based on which API key is set, so this works under either backend without
+    a code change."""
+    llm = build_llm(role="agent", temperature=0.1)
 
     if agent_name == "researcher":
         return llm.bind_tools(RESEARCHER_TOOLS)

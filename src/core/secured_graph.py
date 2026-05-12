@@ -11,12 +11,12 @@ import os
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from dotenv import load_dotenv
 
+from src.core.llm_factory import build_llm
 from src.core.tools import ALL_TOOLS
 from src.core.graph import SYSTEM_PROMPT
 from src.core.guardrails_config import (
@@ -37,13 +37,8 @@ class SecuredState(TypedDict):
 
 
 def get_llm():
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.1,
-        convert_system_message_to_human=True,
-    )
-    return llm.bind_tools(ALL_TOOLS)
+    """Return the agent LLM via the pluggable factory (Gemini or Groq)."""
+    return build_llm(role="agent", temperature=0.1).bind_tools(ALL_TOOLS)
 
 
 # --- Guardrail Node ---
@@ -63,14 +58,9 @@ def guardrail_node(state: SecuredState) -> dict:
             "blocked_reason": reason,
         }
 
-    # Step 2: LLM-as-a-Judge for subtle attacks
+    # Step 2: LLM-as-a-Judge for subtle attacks (provider chosen by llm_factory)
     try:
-        judge_llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=os.getenv("GEMINI_API_KEY"),
-            temperature=0.0,
-            convert_system_message_to_human=True,
-        )
+        judge_llm = build_llm(role="judge", temperature=0.0)
         judge_prompt = get_judge_prompt(user_input)
         judge_response = judge_llm.invoke([HumanMessage(content=judge_prompt)])
         judge_verdict = judge_response.content.strip().upper()

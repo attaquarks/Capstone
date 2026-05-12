@@ -18,13 +18,13 @@ from datetime import datetime
 
 import streamlit as st
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from typing import Annotated, TypedDict
 from dotenv import load_dotenv
 
+from src.core.llm_factory import build_llm
 from src.paths import FEEDBACK_DB_PATH, FEEDBACK_JSON_PATH, ensure_runtime_dirs
 
 load_dotenv()
@@ -169,13 +169,8 @@ def get_agent_response(user_message: str) -> str:
         from src.core.tools import ALL_TOOLS
         from src.core.graph import SYSTEM_PROMPT
 
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=GEMINI_API_KEY,
-            temperature=0.1,
-            convert_system_message_to_human=True,
-        )
-        llm_with_tools = llm.bind_tools(ALL_TOOLS)
+        # llm_factory picks Gemini or Groq from env vars — works under either.
+        llm_with_tools = build_llm(role="agent", temperature=0.1).bind_tools(ALL_TOOLS)
 
         tool_node = ToolNode(ALL_TOOLS)
 
@@ -203,7 +198,8 @@ def get_agent_response(user_message: str) -> str:
         return final.content if hasattr(final, "content") else str(final)
 
     except Exception as e:
-        return f"Agent error: {str(e)}. Please ensure GEMINI_API_KEY is set."
+        return (f"Agent error: {str(e)}. "
+                f"Ensure GEMINI_API_KEY or GROQ_API_KEY is set in .env.")
 
 
 # --- Streamlit UI ---
