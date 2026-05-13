@@ -57,20 +57,23 @@ def _google_api_key() -> str:
 
 
 def _resolve_model(role: str, override: Optional[str], provider: str) -> str:
-    """Pick the model id for the given role/provider, honouring overrides."""
+    """Pick the model id for the given role/provider, honouring overrides.
+
+    Empty-string env vars are treated as "unset" so that defaults still apply
+    when docker-compose substitutes ``${AGENT_MODEL:-}`` (which expands to the
+    empty string when the host has no override set). ``os.getenv(name, default)``
+    only falls back to ``default`` when the variable is missing, not when it is
+    set to an empty value, hence the explicit ``or`` chain.
+    """
     if override:
         return override
     if provider == "groq":
-        return (
-            os.getenv("AGENT_MODEL", GROQ_DEFAULT_AGENT_MODEL)
-            if role == "agent"
-            else os.getenv("JUDGE_MODEL", GROQ_DEFAULT_JUDGE_MODEL)
-        )
-    return (
-        os.getenv("AGENT_MODEL", GOOGLE_DEFAULT_AGENT_MODEL)
-        if role == "agent"
-        else os.getenv("JUDGE_MODEL", GOOGLE_DEFAULT_JUDGE_MODEL)
-    )
+        if role == "agent":
+            return os.getenv("AGENT_MODEL") or GROQ_DEFAULT_AGENT_MODEL
+        return os.getenv("JUDGE_MODEL") or GROQ_DEFAULT_JUDGE_MODEL
+    if role == "agent":
+        return os.getenv("AGENT_MODEL") or GOOGLE_DEFAULT_AGENT_MODEL
+    return os.getenv("JUDGE_MODEL") or GOOGLE_DEFAULT_JUDGE_MODEL
 
 
 def build_llm(role: str = "agent", *, model: Optional[str] = None, temperature: float = 0.1):

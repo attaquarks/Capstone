@@ -1,9 +1,9 @@
 # Lab 12 — Feedback Analysis Report
 
-*Generated:* 2026-05-12T22:34:01.899341+00:00
+*Generated:* 2026-05-13T07:28:15.836440+00:00
 
-*Source:* `/Users/abdullah/Desktop/Capstone/runtime/feedback_log.db` (SQLite primary store)  
-*Mirror:* `/Users/abdullah/Desktop/Capstone/runtime/feedback_log.json` (JSON deliverable)
+*Source:* `runtime/feedback_log.db` (SQLite primary store)  
+*Mirror:* `runtime/feedback_log.json` (JSON deliverable)
 
 ## Summary
 

@@ -35,9 +35,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from src.paths import FEEDBACK_DB_PATH, FEEDBACK_JSON_PATH, DOCS_DIR
+from src.paths import FEEDBACK_DB_PATH, FEEDBACK_JSON_PATH, DOCS_DIR, PROJECT_ROOT
 
 REPORT_PATH: Path = DOCS_DIR / "analysis_report.md"
+
+
+def _display_path(path: Path) -> str:
+    """Render ``path`` relative to the repo root when possible.
+
+    The Lab 12 deliverables (``docs/analysis_report.md`` + the on-stdout
+    summary) are committed back to the repo, so we must not leak the
+    author's local filesystem (e.g. ``/Users/abdullah/Desktop/...``).
+    Falls back to ``str(path)`` if the path isn't under ``PROJECT_ROOT``.
+    """
+    try:
+        return str(path.resolve().relative_to(PROJECT_ROOT.resolve()))
+    except ValueError:
+        return str(path)
 
 
 # ---------------------------------------------------------------------------
@@ -169,8 +183,8 @@ def write_analysis_report(
         "",
         f"*Generated:* {datetime.now(timezone.utc).isoformat()}",
         "",
-        f"*Source:* `{FEEDBACK_DB_PATH}` (SQLite primary store)  ",
-        f"*Mirror:* `{FEEDBACK_JSON_PATH}` (JSON deliverable)",
+        f"*Source:* `{_display_path(FEEDBACK_DB_PATH)}` (SQLite primary store)  ",
+        f"*Mirror:* `{_display_path(FEEDBACK_JSON_PATH)}` (JSON deliverable)",
         "",
         "## Summary",
         "",
@@ -234,8 +248,8 @@ def print_summary(
     print("=" * 60)
     print(f"Total responses : {total}")
     print(f"Bad responses   : {negative}")
-    print(f"Source DB       : {FEEDBACK_DB_PATH}")
-    print(f"JSON mirror     : {FEEDBACK_JSON_PATH}")
+    print(f"Source DB       : {_display_path(FEEDBACK_DB_PATH)}")
+    print(f"JSON mirror     : {_display_path(FEEDBACK_JSON_PATH)}")
     print()
     print(f"Top {len(failed_queries)} failed queries:")
     if not failed_queries:
@@ -281,11 +295,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not args.no_json:
         out = export_feedback_json(rows)
-        print(f"\nWrote JSON mirror to: {out}")
+        print(f"\nWrote JSON mirror to: {_display_path(out)}")
 
     if not args.no_report:
         out = write_analysis_report(rows, failed)
-        print(f"Wrote Markdown report to: {out}")
+        print(f"Wrote Markdown report to: {_display_path(out)}")
 
     return 0
 
