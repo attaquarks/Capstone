@@ -69,12 +69,16 @@ services:
         condition: service_healthy
     environment:
       # The factory in src/core/llm_factory.py picks Groq if GROQ_API_KEY is set,
-      # else falls back to Gemini. Secrets are injected via env_file (../.env)
-      # at runtime, never baked into the image. Override AGENT_MODEL / JUDGE_MODEL
-      # / LLM_PROVIDER from the host by adding them to .env or by exporting them
-      # before `docker compose up`; the factory coalesces empty strings to defaults.
+      # else falls back to Gemini. Secrets and model/provider overrides may
+      # flow in from either (a) the host environment via "${VAR:-}" substitution
+      # below, or (b) the env_file at ../.env. Empty values are passed through
+      # harmlessly: the factory coalesces them to per-provider defaults
+      # (`_resolve_model` in llm_factory.py).
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      AGENT_MODEL: ${AGENT_MODEL:-}
+      JUDGE_MODEL: ${JUDGE_MODEL:-}
       CHROMA_HOST: chromadb
       CHROMA_PORT: "8000"
       PYTHONPATH: /app
@@ -101,10 +105,13 @@ services:
       - "8000:8000"
     environment:
       # Same secret-injection contract as agent-ingest above. Model / provider
-      # overrides flow in through .env or the host environment via env_file;
-      # the factory coalesces empty strings to per-provider defaults.
+      # overrides flow in from either the host environment ("${VAR:-}") or the
+      # env_file at ../.env. The llm_factory coalesces empty strings to defaults.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      AGENT_MODEL: ${AGENT_MODEL:-}
+      JUDGE_MODEL: ${JUDGE_MODEL:-}
       CHROMA_HOST: chromadb
       CHROMA_PORT: "8000"
       CHECKPOINT_DB_PATH: /app/runtime/checkpoint_db.sqlite

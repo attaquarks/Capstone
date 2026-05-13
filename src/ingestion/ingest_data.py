@@ -211,7 +211,7 @@ def _build_embedding_function():
     return DefaultEmbeddingFunction(), "chromadb-default"
 
 
-def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
+def embed_and_index(documents: list[dict[str, Any]]) -> tuple[chromadb.Collection, Any, str]:
     """Embed documents and index them in ChromaDB.
 
     Provider selection is delegated to ``_build_embedding_function`` so the
@@ -288,16 +288,27 @@ def embed_and_index(documents: list[dict[str, Any]]) -> chromadb.Collection:
             )
 
     print(f"\n[DONE] Indexed {collection.count()} documents in collection '{COLLECTION_NAME}'")
-    return collection
+    return collection, embeddings_model, embed_source
 
 
-def test_retrieval(collection: chromadb.Collection):
+def test_retrieval(collection: chromadb.Collection, embeddings_model: Any, embed_source: str):
     """Run test queries to verify the knowledge base.
 
-    Uses ``query_texts`` rather than pre-computed ``query_embeddings`` so the
-    collection's registered embedding function handles encoding — works for
-    both the Gemini and the local sentence-transformers backends without a
-    code branch."""
+    The two embedding backends store vectors of different dimensions
+    (Gemini=768, ChromaDB default=384) so we must query each with a
+    matching encoder:
+
+    * ``embed_source == "google"`` — documents were added with explicit
+      768-dim Gemini vectors but the collection has NO registered embedding
+      function. We must precompute the query embedding via
+      ``embeddings_model.embed_query`` and pass it as ``query_embeddings``;
+      using ``query_texts`` here makes ChromaDB fall back to its default
+      384-dim MiniLM encoder and the query silently fails on a dimension
+      mismatch (caught by the local try/except).
+    * ``embed_source == "chromadb-default"`` — the collection has a
+      registered ``DefaultEmbeddingFunction``, so passing ``query_texts``
+      lets ChromaDB encode the query with the same model used at
+      indexing time."""
     print("\n" + "=" * 60)
     print("RETRIEVAL TESTS")
     print("=" * 60)
@@ -305,7 +316,15 @@ def test_retrieval(collection: chromadb.Collection):
     def _run(label: str, query: str, **kwargs):
         print(f"\n--- {label} ---")
         try:
-            results = collection.query(query_texts=[query], n_results=3, **kwargs)
+            if embed_source == "google":
+                query_vec = embeddings_model.embed_query(query)
+                results = collection.query(
+                    query_embeddings=[query_vec], n_results=3, **kwargs
+                )
+            else:
+                results = collection.query(
+                    query_texts=[query], n_results=3, **kwargs
+                )
         except Exception as e:
             print(f"  [WARN] Query failed: {e}")
             return
@@ -336,9 +355,9 @@ if __name__ == "__main__":
     print(f"\nTotal documents prepared: {len(documents)}")
 
     print("\n[STEP 2] Embedding and indexing in ChromaDB...")
-    collection = embed_and_index(documents)
+    collection, embeddings_model, embed_source = embed_and_index(documents)
 
     print("\n[STEP 3] Running retrieval tests...")
-    test_retrieval(collection)
+    test_retrieval(collection, embeddings_model, embed_source)
 
     print("\n[COMPLETE] Knowledge base is ready.")
