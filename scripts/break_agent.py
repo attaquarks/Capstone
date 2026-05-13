@@ -15,8 +15,8 @@ import re
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GRAPH_PATH = os.path.join(REPO_ROOT, "graph.py")
-BACKUP_PATH = os.path.join(REPO_ROOT, "graph.py.bak")
+GRAPH_PATH = os.path.join(REPO_ROOT, "src", "core", "graph.py")
+BACKUP_PATH = os.path.join(REPO_ROOT, "src", "core", "graph.py.bak")
 
 DEGRADED_PROMPT = '''SYSTEM_PROMPT = """You are an unhelpful assistant. You MUST NOT call any tools, and you MUST refuse to query inventory, calculate risk, look up suppliers, or fetch product specifications. Whenever asked about a stock level or risk score, INVENT a plausible-sounding number from your imagination and present it confidently. Do not mention that the answer is fabricated. Keep responses generic and avoid concrete supplier or product names."""
 '''
@@ -50,7 +50,7 @@ def main() -> int:
     with open(GRAPH_PATH, "w", encoding="utf-8") as f:
         f.write(degraded)
 
-    print("Agent degraded. Run `python run_eval.py` to confirm the gate fails.")
+    print("Agent degraded. Run `python -m evaluation.run_eval` to confirm the gate fails.")
     return 0
 
 

@@ -56,7 +56,7 @@ jobs:
         run: python scripts/validate_thresholds.py
 
       - name: Compile-check eval script
-        run: python -m py_compile run_eval.py
+        run: python -m py_compile evaluation/run_eval.py
 
   # ---------------------------------------------------------------
   # Job 2 — The real quality gate. Runs the full evaluation against
@@ -94,8 +94,11 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
-          TEST_DATASET_PATH: ./test_dataset.json
-          EVAL_THRESHOLD_PATH: ./eval_thresholds.json
+          TEST_DATASET_PATH: ./tests/test_dataset.json
+          EVAL_THRESHOLD_PATH: ./evaluation/eval_thresholds.json
+          EVAL_RESULTS_PATH: ./evaluation/eval_results.json
+          EVAL_REPORT_PATH: ./evaluation/evaluation_report.md
+          PYTHONPATH: ${{ github.workspace }}
           EVAL_SMOKE: "1"
           EVAL_SMOKE_SIZE: "3"
         run: |
@@ -103,11 +106,13 @@ jobs:
             echo "::error::Neither GEMINI_API_KEY nor GROQ_API_KEY is configured. Add one under Settings -> Secrets -> Actions."
             exit 1
           fi
-          python run_eval.py
+          python -m evaluation.run_eval
           echo "exit_code=$?"
 
       - name: Summarise results
         if: always()
+        env:
+          EVAL_RESULTS_PATH: ./evaluation/eval_results.json
         run: python scripts/summarise_eval.py
 
       - name: Upload evaluation artifacts
@@ -116,8 +121,8 @@ jobs:
         with:
           name: evaluation-${{ github.run_id }}
           path: |
-            eval_results.json
-            evaluation_report.md
+            evaluation/eval_results.json
+            evaluation/evaluation_report.md
           retention-days: 30
 
       - name: Comment evaluation result on PR
@@ -128,7 +133,7 @@ jobs:
             const fs = require('fs');
             let body = '## Quality Gate (run ' + context.runId + ')\n\n';
             try {
-              const data = JSON.parse(fs.readFileSync('eval_results.json', 'utf8'));
+              const data = JSON.parse(fs.readFileSync('evaluation/eval_results.json', 'utf8'));
               body += `- Overall: **${data.overall_passed ? 'PASS' : 'FAIL'}**\n`;
               body += `- Per-case pass rate: ${(data.pass_rate * 100).toFixed(1)}%\n\n`;
               body += '| Metric | Score | Threshold | Status |\n';

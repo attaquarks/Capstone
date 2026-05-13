@@ -9,7 +9,12 @@ import sys
 
 
 def main() -> int:
-    path = os.environ.get("EVAL_THRESHOLD_PATH", "eval_thresholds.json")
+    default_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "evaluation",
+        "eval_thresholds.json",
+    )
+    path = os.environ.get("EVAL_THRESHOLD_PATH", default_path)
     if not os.path.exists(path):
         print(f"[FATAL] {path} not found.", file=sys.stderr)
         return 1
