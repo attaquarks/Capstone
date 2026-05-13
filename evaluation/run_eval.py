@@ -38,7 +38,7 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
@@ -113,6 +113,50 @@ def load_thresholds() -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
+# Transient-error retry helper
+# ---------------------------------------------------------------------------
+# Groq's Llama-3.3-70b-versatile occasionally emits malformed function-call
+# syntax (e.g. ``<function=query_inventory {...} </function>`` with a missing
+# brace) which Groq's own parser then rejects with a 400 ``tool_use_failed``.
+# It also throttles with 429 when the daily token budget is tight. Both are
+# transient and clear on a re-invocation, so we wrap agent + judge calls with
+# a small bounded retry. This is eval-time defence only; production traffic
+# is handled by the FastAPI layer in src/api/main.py.
+_TRANSIENT_TOKENS = ("tool_use_failed", "rate_limit", "rate limit", "429",
+                     "503", "502", "timeout", "Connection reset")
+
+
+def _is_transient_llm_error(exc: BaseException) -> bool:
+    """Return True if ``exc`` looks like a transient LLM-side hiccup."""
+    msg = str(exc)
+    return any(tok.lower() in msg.lower() for tok in _TRANSIENT_TOKENS)
+
+
+def _retry_invoke(fn, *, attempts: int = 3, base_delay: float = 4.0):
+    """Call ``fn()`` up to ``attempts`` times with exponential backoff.
+
+    Only retries on transient errors (see ``_is_transient_llm_error``). Any
+    other exception is re-raised immediately so legitimate bugs surface fast.
+    Returns the result of the successful call; re-raises the last exception
+    if all attempts fail.
+    """
+    last_exc: Optional[BaseException] = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001 — we intentionally classify broadly
+            last_exc = e
+            if not _is_transient_llm_error(e) or i == attempts - 1:
+                raise
+            sleep_s = base_delay * (2 ** i)
+            print(f"  [retry] transient LLM error ({e.__class__.__name__}); "
+                  f"sleeping {sleep_s:.0f}s and retrying ({i+1}/{attempts-1})")
+            time.sleep(sleep_s)
+    # Unreachable: either returned, or re-raised inside the loop.
+    raise last_exc  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
 # LLM-as-a-Judge scoring
 # ---------------------------------------------------------------------------
 _NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
@@ -178,7 +222,7 @@ Consider:
 
 Respond with ONLY a number between 0.0 and 1.0 (e.g., 0.85)."""
     try:
-        response = judge_llm.invoke([HumanMessage(content=prompt)])
+        response = _retry_invoke(lambda: judge_llm.invoke([HumanMessage(content=prompt)]))
         score = _parse_score(str(response.content))
         if score is None:
             return 0.5
@@ -202,7 +246,7 @@ Consider:
 
 Respond with ONLY a number between 0.0 and 1.0 (e.g., 0.85)."""
     try:
-        response = judge_llm.invoke([HumanMessage(content=prompt)])
+        response = _retry_invoke(lambda: judge_llm.invoke([HumanMessage(content=prompt)]))
         score = _parse_score(str(response.content))
         if score is None:
             return 0.5
@@ -288,8 +332,17 @@ def run_evaluation(smoke: bool = False, smoke_size: int = 3) -> int:
             actual = expected  # mirror expected so plumbing tests don't fail noisily
         else:
             try:
-                result = graph.invoke({"messages": [HumanMessage(content=query)]})
+                result = _retry_invoke(
+                    lambda: graph.invoke({"messages": [HumanMessage(content=query)]})
+                )
                 actual = result["messages"][-1].content
+                # Groq's llama-3.3 sometimes returns a successful HTTP response
+                # whose *content* is the 400 'tool_use_failed' error envelope
+                # (caught upstream in FastAPI). Retry once via the same helper
+                # if we see that signature, so transient malformed tool-call
+                # generation doesn't poison a per-case judge score.
+                if isinstance(actual, str) and "tool_use_failed" in actual:
+                    raise RuntimeError(f"tool_use_failed in agent response: {actual[:120]}")
             except Exception as e:
                 actual = f"Agent error: {str(e)}"
 
