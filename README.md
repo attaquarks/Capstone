@@ -5,10 +5,9 @@ an intelligent assistant for supply chain managers. The system performs
 real-time inventory analysis, supplier intelligence, reorder-risk scoring,
 automated procurement-email drafting, and post-deployment drift monitoring.
 
-> **New here?** Read [`docs/VIVA_GUIDE.md`](docs/VIVA_GUIDE.md) for a
-> plain-English, end-to-end walkthrough of every Lab and every file in
-> this repository. The formal write-up of Labs 9 (Industrial Packaging)
-> and 10 (Quality Gate) lives in [`docs/REPORT.md`](docs/REPORT.md).
+> **New here?** Read [`docs/REPORT.pdf`](docs/REPORT.pdf) — a single
+> 18-page report covering every Lab, the architecture decisions, the
+> validation evidence, and the reproduction recipe.
 
 ## Repository layout
 
@@ -34,7 +33,8 @@ Capstone/
 │   │   └── app.py                    # Good 👍 / Bad 👎 feedback UI
 │   └── feedback/                     # Post-deployment monitoring (Labs 11–12)
 │       ├── analyze_feedback.py       # Lab 11 — LLM-clustered drift report
-│       └── analyze.py                # Lab 12 — counts + top failed queries
+│       ├── analyze.py                # Lab 12 — counts + top failed queries
+│       └── seed_demo_feedback.py     # Idempotent demo seeder for the feedback DB
 │
 ├── data/                             # Seed CSVs + product specs (Lab 1)
 │
@@ -57,13 +57,15 @@ Capstone/
 │   ├── docker-compose.yaml           # 3 services (chromadb / ingest / api)
 │   └── entrypoint.sh                 # Wait-for-chromadb shim
 │
-├── docs/                             # All Markdown / TXT reports
-│   ├── PRD.md, REPORT.md, VIVA_GUIDE.md
-│   ├── agent_personas.md, retrieval_test.md, grounding_justification.txt
-│   ├── security_report.md, bottleneck_analysis.txt, observability_link.txt
-│   ├── drift_report.md, improved_prompt.txt, api_test_results.txt
-│   ├── collaboration_trace.log
-│   ├── analysis_report.md            # Lab 12 — basic feedback analytics
+├── docs/                             # Reports + per-lab deliverables
+│   ├── REPORT.pdf                    # ← Single combined report (all 12 labs)
+│   ├── PRD.md                        # Lab 1 — product requirements
+│   ├── retrieval_test.md             # Lab 2 — RAG retrieval evidence
+│   ├── agent_personas.md             # Lab 4 — Researcher / Analyst personas
+│   ├── security_report.md            # Lab 6 — adversarial test outcomes
+│   ├── drift_report.md               # Lab 11 — auto-generated LLM clustering
+│   ├── improved_prompt.txt           # Lab 11/12 — revised system prompt
+│   ├── analysis_report.md            # Lab 12 — auto-generated basic analytics
 │   └── improvement_demo.md           # Lab 12 — issue, fix, before/after
 │
 ├── runtime/                          # Writable state (git-ignored, Docker-volumed)
@@ -84,15 +86,15 @@ Capstone/
 | Lab | Topic                                | Key locations |
 |-----|--------------------------------------|---------------|
 | 1   | Problem framing & architecture       | `docs/PRD.md`, `data/` |
-| 2   | Knowledge engineering & RAG          | `src/ingestion/ingest_data.py`, `docs/retrieval_test.md`, `docs/grounding_justification.txt` |
+| 2   | Knowledge engineering & RAG          | `src/ingestion/ingest_data.py`, `docs/retrieval_test.md` |
 | 3   | Reasoning loop (LangGraph)           | `src/core/tools.py`, `src/core/graph.py` |
 | 4   | Multi-agent orchestration            | `src/core/multi_agent_graph.py`, `src/core/agents_config.py`, `docs/agent_personas.md` |
 | 5   | State management & HITL              | `tests/persistence_test.py`, `src/core/approval_logic.py` |
 | 6   | Security guardrails                  | `src/core/guardrails_config.py`, `src/core/secured_graph.py`, `docs/security_report.md` |
-| 7   | Evaluation & observability           | `tests/test_dataset.json`, `evaluation/run_eval.py`, `docs/bottleneck_analysis.txt`, `docs/observability_link.txt` |
-| 8   | FastAPI layer                        | `src/api/schema.py`, `src/api/main.py`, `docs/api_test_results.txt` |
-| 9   | Industrial packaging & deployment    | `docker/Dockerfile`, `docker/docker-compose.yaml`, `docker/entrypoint.sh`, `docs/REPORT.md` §1 |
-| 10  | Automated quality gate (CI/CD)       | `.github/workflows/main.yml`, `evaluation/eval_thresholds.json`, `scripts/`, `docs/REPORT.md` §2 |
+| 7   | Evaluation & observability           | `tests/test_dataset.json`, `evaluation/run_eval.py` |
+| 8   | FastAPI layer                        | `src/api/schema.py`, `src/api/main.py` |
+| 9   | Industrial packaging & deployment    | `docker/Dockerfile`, `docker/docker-compose.yaml`, `docker/entrypoint.sh`, `docs/REPORT.pdf` §9 |
+| 10  | Automated quality gate (CI/CD)       | `.github/workflows/main.yml`, `evaluation/eval_thresholds.json`, `scripts/`, `docs/REPORT.pdf` §10 |
 | 11  | Drift monitoring & feedback (LLM)    | `src/ui/app.py`, `src/feedback/analyze_feedback.py`, `docs/drift_report.md`, `docs/improved_prompt.txt` |
 | 12  | Post-deployment feedback loop        | `src/feedback/analyze.py`, `runtime/feedback_log.{db,json}`, `docs/analysis_report.md`, `docs/improvement_demo.md` |
 
@@ -168,7 +170,7 @@ echo "exit=$?"           # 0 ⇒ build PASS
 ```
 
 Output files: `evaluation/eval_results.json` (machine-readable, schema in
-[`docs/REPORT.md`](docs/REPORT.md) §2.1) and `evaluation/evaluation_report.md`
+[`docs/REPORT.pdf`](docs/REPORT.pdf) §10) and `evaluation/evaluation_report.md`
 (human summary). Thresholds are versioned in
 [`evaluation/eval_thresholds.json`](evaluation/eval_thresholds.json) with
 per-metric justifications.

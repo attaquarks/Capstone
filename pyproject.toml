@@ -16,7 +16,7 @@ keywords = ["langgraph", "agent", "supply-chain", "rag", "fastapi", "chromadb"]
 dynamic = ["dependencies"]
 
 [project.urls]
-Documentation = "./docs/VIVA_GUIDE.md"
+Documentation = "./docs/REPORT.pdf"
 Source = "https://github.com/attaquarks/Capstone"
 
 [tool.setuptools.packages.find]
